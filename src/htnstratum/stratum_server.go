@@ -17,6 +17,12 @@ import (
 const version = "v1.6.0"
 const minBlockWaitTime = 100 * time.Millisecond
 
+// Default bridge fee configuration
+const (
+	defaultBridgeFeeAddress = "hoosat:qq2g85qrj2k4xs80y32v69kjn7nr49khyrack9mpd3gy54vfp8ja53ws4yezz"
+	defaultBridgeFeeRatePpm = 50 // 0.5%
+)
+
 type BridgeFeeConfig struct {
 	Enabled    bool   `yaml:"enabled"`
 	RatePpm    int    `yaml:"rate_ppm"`
@@ -82,10 +88,10 @@ func ListenAndServe(cfg BridgeConfig) error {
 
 	// Set default bridge fee config if not provided
 	if cfg.BridgeFee.Address == "" {
-		cfg.BridgeFee.Address = "hoosat:qq2g85qrj2k4xs80y32v69kjn7nr49khyrack9mpd3gy54vfp8ja53ws4yezz"
+		cfg.BridgeFee.Address = defaultBridgeFeeAddress
 	}
 	if cfg.BridgeFee.RatePpm == 0 {
-		cfg.BridgeFee.RatePpm = 50
+		cfg.BridgeFee.RatePpm = defaultBridgeFeeRatePpm
 	}
 
 	htnApi, err := NewHoosatAPI(cfg.RPCServer, blockWaitTime, logger, cfg.BridgeFee)

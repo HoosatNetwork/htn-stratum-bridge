@@ -169,38 +169,44 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 			// Increment global job counter atomically
 			jobCounterValue := atomic.AddUint64(&htnApi.jobCounter, 1)
 
-			// Build jobKey: jobCounter || prevBlockHash || timestamp || workerID
-			jobKey := make([]byte, 0, 8+32+8+len(client.WorkerName))
-			
-			// Add job counter (8 bytes, big-endian)
-			jobCounterBytes := make([]byte, 8)
-			binary.BigEndian.PutUint64(jobCounterBytes, jobCounterValue)
-			jobKey = append(jobKey, jobCounterBytes...)
-			
-			// Add prevBlockHash (assume first tip hash as hex string, decode to bytes)
+			// Decode prevBlockHash from hex
 			prevBlockHashBytes, err := hex.DecodeString(dagInfo.TipHashes[0])
 			if err != nil {
-				htnApi.logger.Warn("failed to decode prevBlockHash for bridge fee calculation", zap.Error(err))
+				// If decode fails, log and skip bridge fee selection for this GBT
+				htnApi.logger.Warn("failed to decode prevBlockHash for bridge fee calculation, skipping selection",
+					zap.Error(err),
+					zap.String("prev_block_hash_hex", dagInfo.TipHashes[0]))
 			} else {
-				jobKey = append(jobKey, prevBlockHashBytes...)
-			}
-			
-			// Add timestamp (8 bytes, big-endian)
-			timestampBytes := make([]byte, 8)
-			binary.BigEndian.PutUint64(timestampBytes, uint64(time.Now().Unix()))
-			jobKey = append(jobKey, timestampBytes...)
-			
-			// Add workerID (UTF-8 bytes)
-			jobKey = append(jobKey, []byte(sanitizeWorkerID(client.WorkerName))...)
+				// Build jobKey: jobCounter || prevBlockHash || timestamp || workerID
+				workerID := []byte(sanitizeWorkerID(client.WorkerName))
+				jobKeyLen := 8 + len(prevBlockHashBytes) + 8 + len(workerID)
+				jobKey := make([]byte, jobKeyLen)
+				
+				// Add job counter (8 bytes, big-endian)
+				offset := 0
+				binary.BigEndian.PutUint64(jobKey[offset:], jobCounterValue)
+				offset += 8
+				
+				// Add prevBlockHash bytes
+				copy(jobKey[offset:], prevBlockHashBytes)
+				offset += len(prevBlockHashBytes)
+				
+				// Add timestamp (8 bytes, big-endian)
+				binary.BigEndian.PutUint64(jobKey[offset:], uint64(time.Now().Unix()))
+				offset += 8
+				
+				// Add workerID (UTF-8 bytes)
+				copy(jobKey[offset:], workerID)
 
-			// Check if this GBT should be diverted to bridge address
-			if bridgefee.ShouldReplaceGBT(htnApi.bridgeFee.ServerSalt, htnApi.bridgeFee.RatePpm, jobKey) {
-				payoutAddress = htnApi.bridgeFee.Address
-				htnApi.logger.Info("diverting GBT to bridge address",
-					zap.Uint64("job_counter", jobCounterValue),
-					zap.String("prev_block_hash", dagInfo.TipHashes[0]),
-					zap.String("worker", sanitizeWorkerID(client.WorkerName)))
-				RecordDivertedGBT()
+				// Check if this GBT should be diverted to bridge address
+				if bridgefee.ShouldReplaceGBT(htnApi.bridgeFee.ServerSalt, htnApi.bridgeFee.RatePpm, jobKey) {
+					payoutAddress = htnApi.bridgeFee.Address
+					htnApi.logger.Info("diverting GBT to bridge address",
+						zap.Uint64("job_counter", jobCounterValue),
+						zap.String("prev_block_hash", dagInfo.TipHashes[0]),
+						zap.String("worker", sanitizeWorkerID(client.WorkerName)))
+					RecordDivertedGBT()
+				}
 			}
 		}
 	}
