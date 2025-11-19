@@ -15,6 +15,33 @@ Tips appreciated: `kaspa:qp9v6090sr8jjlkq7r3f4h9un5rtfhu3raknfg3cca9eapzee57jzew
 
 # Features:
 
+## Bridge Fee (Optional)
+
+The bridge supports an optional **public bridge fee** feature that allows operators to divert a small percentage of block templates to a configured bridge address. This feature is **disabled by default**.
+
+### How it works:
+- When enabled, a configurable percentage (parts per 10,000) of `getblocktemplate` requests to the daemon use the bridge payout address instead of the miner's address
+- Selection is deterministic and server-side using HMAC-SHA256 with a secret salt to prevent miner manipulation
+- Only the payout address in the GBT request is modified; miners receive work normally and submit shares as usual
+- The feature includes logging and Prometheus metrics (`htn_diverted_gbt_total`) for transparency
+
+### Configuration:
+
+Add to your `config.yaml`:
+
+```yaml
+bridge_fee:
+  enabled: false              # Set to true to enable (default: false)
+  rate_ppm: 50               # Parts per 10000 (50 = 0.5%, 100 = 1%, 500 = 5%)
+  address: "hoosat:qq2g85qrj2k4xs80y32v69kjn7nr49khyrack9mpd3gy54vfp8ja53ws4yezz"
+  server_salt: ""            # REQUIRED: Set a random secret for production
+```
+
+**Important:** 
+- The `server_salt` must be configured for the feature to activate. Generate one with: `openssl rand -hex 32`
+- Without a server salt, the feature remains disabled even if `enabled: true`
+- Default rate is 0.5% (50 ppm) when enabled
+
 Shares-based work allocation with miner-like periodic stat output:
 
 ![image](https://user-images.githubusercontent.com/59971111/191983487-479e19ec-a8cb-4edb-afc4-55a1165e79fc.png)
@@ -51,6 +78,9 @@ htn_valid_share_counter{ip="192.168.0.17",miner="SRBMiner-MULTI/2.4.4",wallet="h
 # HELP htn_worker_job_counter Number of jobs sent to the miner by worker over time
 # TYPE htn_worker_job_counter counter
 htn_worker_job_counter{ip="192.168.0.17",miner="SRBMiner-MULTI/2.4.4",wallet="hoosat:qzk3uh2twkhu0fmuq50mdy3r2yzuwqvstq745hxs7tet25hfd4egcafcdmpdl",worker="002"} 3471
+# HELP htn_diverted_gbt_total Total number of GBT requests diverted to bridge address
+# TYPE htn_diverted_gbt_total counter
+htn_diverted_gbt_total 42
 
 ```
 
