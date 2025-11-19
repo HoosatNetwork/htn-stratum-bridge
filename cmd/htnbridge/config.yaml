@@ -41,3 +41,22 @@ log_to_file: true
 # `curl http://localhost:{prom_port}/metrics`
 # Note `:PORT` format is needed if not specifiying a specific ip range
 prom_port: :2114
+
+# bridge_fee: optional public bridge fee configuration
+# When enabled, a percentage of block templates will use the bridge address
+# instead of the miner's address for payout
+bridge_fee:
+  # enabled: set to true to enable the bridge fee feature (default: false)
+  enabled: false
+  
+  # rate_ppm: parts per 10000 to divert to bridge (default: 50 = 0.5%)
+  # Examples: 50 = 0.5%, 100 = 1%, 500 = 5%
+  rate_ppm: 50
+  
+  # address: bridge payout address (default provided below)
+  address: "hoosat:qq2g85qrj2k4xs80y32v69kjn7nr49khyrack9mpd3gy54vfp8ja53ws4yezz"
+  
+  # server_salt: REQUIRED secret salt for deterministic selection
+  # MUST be configured for production use to enable the feature
+  # Generate a random string: e.g., `openssl rand -hex 32`
+  server_salt: ""

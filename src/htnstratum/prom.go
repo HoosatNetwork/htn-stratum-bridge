@@ -77,6 +77,11 @@ var networkBlockCount = promauto.NewGauge(prometheus.GaugeOpts{
 	Help: "Gauge representing the network block count",
 })
 
+var divertedGBTCounter = promauto.NewCounter(prometheus.CounterOpts{
+	Name: "htn_diverted_gbt_total",
+	Help: "Total number of GBT requests diverted to bridge address",
+})
+
 func commonLabels(worker *gostratum.StratumContext) prometheus.Labels {
 	return prometheus.Labels{
 		"worker": worker.WorkerName,
@@ -143,6 +148,10 @@ func RecordWorkerError(address string, shortError ErrorShortCodeT) {
 		"wallet": address,
 		"error":  string(shortError),
 	}).Inc()
+}
+
+func RecordDivertedGBT() {
+	divertedGBTCounter.Inc()
 }
 
 func InitInvalidCounter(worker *gostratum.StratumContext, errorType string) {

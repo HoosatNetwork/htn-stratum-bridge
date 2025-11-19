@@ -17,23 +17,31 @@ import (
 const version = "v1.6.0"
 const minBlockWaitTime = 100 * time.Millisecond
 
+type BridgeFeeConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	RatePpm    int    `yaml:"rate_ppm"`
+	Address    string `yaml:"address"`
+	ServerSalt string `yaml:"server_salt"`
+}
+
 type BridgeConfig struct {
-	StratumPort       string        `yaml:"stratum_port"`
-	RPCServer         string        `yaml:"hoosat_address"`
-	PromPort          string        `yaml:"prom_port"`
-	PrintStats        bool          `yaml:"print_stats"`
-	UseLogFile        bool          `yaml:"log_to_file"`
-	HealthCheckPort   string        `yaml:"health_check_port"`
-	SoloMining        bool          `yaml:"solo_mining"`
-	BlockWaitTime     time.Duration `yaml:"block_wait_time"`
-	MinShareDiff      float64       `yaml:"min_share_diff"`
-	VarDiff           bool          `yaml:"var_diff"`
-	SharesPerMin      uint          `yaml:"shares_per_min"`
-	VarDiffStats      bool          `yaml:"var_diff_stats"`
-	ExtranonceSize    uint          `yaml:"extranonce_size"`
-	MineWhenNotSynced bool          `yaml:"mine_when_not_synced"`
-	Poll              int64         `yaml:"poll"`
-	Vote              int64         `yaml:"vote"`
+	StratumPort       string           `yaml:"stratum_port"`
+	RPCServer         string           `yaml:"hoosat_address"`
+	PromPort          string           `yaml:"prom_port"`
+	PrintStats        bool             `yaml:"print_stats"`
+	UseLogFile        bool             `yaml:"log_to_file"`
+	HealthCheckPort   string           `yaml:"health_check_port"`
+	SoloMining        bool             `yaml:"solo_mining"`
+	BlockWaitTime     time.Duration    `yaml:"block_wait_time"`
+	MinShareDiff      float64          `yaml:"min_share_diff"`
+	VarDiff           bool             `yaml:"var_diff"`
+	SharesPerMin      uint             `yaml:"shares_per_min"`
+	VarDiffStats      bool             `yaml:"var_diff_stats"`
+	ExtranonceSize    uint             `yaml:"extranonce_size"`
+	MineWhenNotSynced bool             `yaml:"mine_when_not_synced"`
+	Poll              int64            `yaml:"poll"`
+	Vote              int64            `yaml:"vote"`
+	BridgeFee         BridgeFeeConfig  `yaml:"bridge_fee"`
 }
 
 func configureZap(cfg BridgeConfig) (*zap.SugaredLogger, func()) {
@@ -71,7 +79,16 @@ func ListenAndServe(cfg BridgeConfig) error {
 	if blockWaitTime < minBlockWaitTime {
 		blockWaitTime = minBlockWaitTime
 	}
-	htnApi, err := NewHoosatAPI(cfg.RPCServer, blockWaitTime, logger)
+
+	// Set default bridge fee config if not provided
+	if cfg.BridgeFee.Address == "" {
+		cfg.BridgeFee.Address = "hoosat:qq2g85qrj2k4xs80y32v69kjn7nr49khyrack9mpd3gy54vfp8ja53ws4yezz"
+	}
+	if cfg.BridgeFee.RatePpm == 0 {
+		cfg.BridgeFee.RatePpm = 50
+	}
+
+	htnApi, err := NewHoosatAPI(cfg.RPCServer, blockWaitTime, logger, cfg.BridgeFee)
 	if err != nil {
 		return err
 	}

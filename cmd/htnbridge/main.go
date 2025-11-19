@@ -79,6 +79,14 @@ func main() {
 	log.Printf("Mine when not synced:\t%t", cfg.MineWhenNotSynced)
 	log.Printf("Poll id:\t\t\t%d", cfg.Poll)
 	log.Printf("Vote id:\t\t\t%d", cfg.Vote)
+	log.Printf("Bridge fee enabled:\t\t%t", cfg.BridgeFee.Enabled)
+	if cfg.BridgeFee.Enabled {
+		log.Printf("Bridge fee rate:\t\t%d ppm (%.2f%%)", cfg.BridgeFee.RatePpm, float64(cfg.BridgeFee.RatePpm)/100.0)
+		log.Printf("Bridge fee address:\t\t%s", cfg.BridgeFee.Address)
+		if cfg.BridgeFee.ServerSalt == "" {
+			log.Printf("WARNING: Bridge fee ServerSalt not configured - feature will be disabled")
+		}
+	}
 	log.Println("----------------------------------")
 
 	if err := htnstratum.ListenAndServe(cfg); err != nil {
