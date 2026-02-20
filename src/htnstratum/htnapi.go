@@ -26,6 +26,9 @@ type HtnApi struct {
 	connected     bool
 	bridgeFee     BridgeFeeConfig
 	jobCounter    uint64 // Atomic counter for unique job identifiers
+	// Added: counters for periodic diverted-GBT summary logging
+	gbtTotal    uint64
+	gbtDiverted uint64
 }
 
 func NewHoosatAPI(address string, blockWaitTime time.Duration, logger *zap.SugaredLogger, bridgeFee BridgeFeeConfig) (*HtnApi, error) {
@@ -156,6 +159,7 @@ func sanitizeWorkerID(s string) string {
 }
 
 func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll int64, vote int64) (*appmessage.GetBlockTemplateResponseMessage, error) {
+	total := atomic.AddUint64(&htnApi.gbtTotal, 1)
 	// Determine the target payout address (miner or bridge)
 	payoutAddress := client.WalletAddr
 
@@ -201,10 +205,17 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 				// Check if this GBT should be diverted to bridge address
 				if bridgefee.ShouldReplaceGBT(htnApi.bridgeFee.ServerSalt, htnApi.bridgeFee.RatePpm, jobKey) {
 					payoutAddress = htnApi.bridgeFee.Address
-					htnApi.logger.Info("diverting GBT to bridge address",
+					diverted := atomic.AddUint64(&htnApi.gbtDiverted, 1)
+					htnApi.logger.Debug("diverting GBT to bridge address",
 						zap.Uint64("job_counter", jobCounterValue),
 						zap.String("prev_block_hash", dagInfo.TipHashes[0]),
 						zap.String("worker", sanitizeWorkerID(client.WorkerName)))
+					// Minimal periodic summary (adjust modulus as desired)
+					// Logs every 3600 total GBTs, and only after at least one diversion.
+					if  diverted%20 == 0 && diverted > 0 {
+						pct := (float64(diverted) / float64(total)) * 100.0
+						htnApi.logger.Infof("diverted GBTs to bridge address : %.3f%% (%d/%d)", pct, diverted, total)
+					}
 					RecordDivertedGBT()
 				}
 			}
