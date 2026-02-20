@@ -1,4 +1,4 @@
-FROM golang:1.24.5 AS build
+FROM golang:1.26.0 AS build
 
 LABEL org.opencontainers.image.description="Dockerized Hoosat Stratum Bridge"
 LABEL org.opencontainers.image.authors="onemorebsmith,hoosat"

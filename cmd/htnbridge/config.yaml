@@ -48,4 +48,4 @@ log_to_file: true
 prom_port: :2114
 
 
-mine_when_not_synced: true
+mine_when_not_synced: false
