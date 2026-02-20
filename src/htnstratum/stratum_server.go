@@ -14,7 +14,7 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-const version = "v1.6.0"
+const version = "v1.6.7"
 const minBlockWaitTime = 100 * time.Millisecond
 
 type BridgeConfig struct {
@@ -22,6 +22,7 @@ type BridgeConfig struct {
 	RPCServer         string        `yaml:"hoosat_address"`
 	PromPort          string        `yaml:"prom_port"`
 	PrintStats        bool          `yaml:"print_stats"`
+	RollingStats      bool          `yaml:"rolling_stats"`
 	UseLogFile        bool          `yaml:"log_to_file"`
 	HealthCheckPort   string        `yaml:"health_check_port"`
 	SoloMining        bool          `yaml:"solo_mining"`
@@ -87,7 +88,7 @@ func ListenAndServe(cfg BridgeConfig) error {
 		go http.ListenAndServe(cfg.HealthCheckPort, nil)
 	}
 
-	shareHandler := newShareHandler(htnApi.hoosat)
+	shareHandler := newShareHandler(htnApi.hoosat, cfg.RollingStats)
 	minDiff := cfg.MinShareDiff
 	if minDiff == 0 {
 		minDiff = 4

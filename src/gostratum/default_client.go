@@ -78,7 +78,7 @@ func HandleAuthorize(ctx *StratumContext, event JsonRpcEvent) error {
 		SendExtranonce(ctx)
 	}
 
-	ctx.Logger.Info(fmt.Sprintf("client authorized, address: %s", ctx.WalletAddr))
+	ctx.Logger.Debug(fmt.Sprintf("client authorized, address: %s", ctx.WalletAddr))
 	return nil
 }
 
@@ -94,13 +94,13 @@ func HandleSubscribe(ctx *StratumContext, event JsonRpcEvent) error {
 		}
 	}
 
-	ctx.Logger.Info("client subscribed ", zap.Any("context", ctx))
+	ctx.Logger.Debug("client subscribed ", zap.Any("context", ctx))
 	return nil
 }
 
 func HandleSubmit(ctx *StratumContext, event JsonRpcEvent) error {
 	// stub
-	ctx.Logger.Info("work submission")
+	ctx.Logger.Debug("work submission")
 	return nil
 }
 

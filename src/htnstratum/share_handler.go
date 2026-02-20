@@ -38,6 +38,12 @@ type WorkStats struct {
 	VarDiffSharesFound atomic.Int64
 	VarDiffWindow      int
 	MinDiff            atomic.Float64
+	// Rolling share tracking for daily averages
+	RollingShares        map[int64]int64   // hour timestamp -> share count
+	RollingSharesDiff    map[int64]float64 // hour timestamp -> share difficulty sum
+	RollingStaleShares   map[int64]int64   // hour timestamp -> stale share count
+	RollingInvalidShares map[int64]int64   // hour timestamp -> invalid share count
+	rollingLock          sync.Mutex
 }
 
 type shareHandler struct {
@@ -47,7 +53,9 @@ type shareHandler struct {
 	stats        map[string]*WorkStats
 	statsLock    sync.Mutex
 	overall      WorkStats
+	rollingStats bool
 	tipBlueScore uint64
+	submitLock   sync.Mutex
 }
 
 type BanInfo struct {
@@ -82,11 +90,18 @@ func TryToBan(address string) {
 	bans = append(bans, BanInfo{Address: address, Times: 1})
 }
 
-func newShareHandler(hoosat *rpcclient.RPCClient) *shareHandler {
+func newShareHandler(hoosat *rpcclient.RPCClient, rollingStats bool) *shareHandler {
 	return &shareHandler{
-		hoosat:    hoosat,
-		stats:     map[string]*WorkStats{},
-		statsLock: sync.Mutex{},
+		hoosat: hoosat,
+		stats:  map[string]*WorkStats{},
+		overall: WorkStats{
+			RollingShares:        make(map[int64]int64),
+			RollingSharesDiff:    make(map[int64]float64),
+			RollingStaleShares:   make(map[int64]int64),
+			RollingInvalidShares: make(map[int64]int64),
+		},
+		rollingStats: rollingStats,
+		statsLock:    sync.Mutex{},
 	}
 }
 
@@ -114,6 +129,10 @@ func (sh *shareHandler) getCreateStats(ctx *gostratum.StratumContext) *WorkStats
 		stats.LastShare = time.Now()
 		stats.WorkerName = ctx.RemoteAddr
 		stats.StartTime = time.Now()
+		stats.RollingShares = make(map[int64]int64)
+		stats.RollingSharesDiff = make(map[int64]float64)
+		stats.RollingStaleShares = make(map[int64]int64)
+		stats.RollingInvalidShares = make(map[int64]int64)
 		sh.stats[ctx.RemoteAddr] = stats
 
 		// TODO: not sure this is the best place, nor whether we shouldn't be
@@ -123,6 +142,46 @@ func (sh *shareHandler) getCreateStats(ctx *gostratum.StratumContext) *WorkStats
 
 	sh.statsLock.Unlock()
 	return stats
+}
+
+func (stats *WorkStats) updateRollingCounters(shareDiff float64, isStale bool, isInvalid bool) {
+	now := time.Now()
+	hourKey := now.Unix() / 3600 // hour timestamp
+
+	stats.rollingLock.Lock()
+	defer stats.rollingLock.Unlock()
+
+	if !isStale && !isInvalid {
+		stats.RollingShares[hourKey]++
+		stats.RollingSharesDiff[hourKey] += shareDiff
+	} else if isStale {
+		stats.RollingStaleShares[hourKey]++
+	} else if isInvalid {
+		stats.RollingInvalidShares[hourKey]++
+	}
+
+	// Clean up old entries (older than 24 hours)
+	cutoff := hourKey - 24
+	for k := range stats.RollingShares {
+		if k < cutoff {
+			delete(stats.RollingShares, k)
+		}
+	}
+	for k := range stats.RollingSharesDiff {
+		if k < cutoff {
+			delete(stats.RollingSharesDiff, k)
+		}
+	}
+	for k := range stats.RollingStaleShares {
+		if k < cutoff {
+			delete(stats.RollingStaleShares, k)
+		}
+	}
+	for k := range stats.RollingInvalidShares {
+		if k < cutoff {
+			delete(stats.RollingInvalidShares, k)
+		}
+	}
 }
 
 type submitInfo struct {
@@ -260,7 +319,9 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 		state.RemoveJob(int(submitInfo.jobId))
 		if errors.Is(err, ErrStaleShare) {
 			stats.StaleShares.Add(1)
+			stats.updateRollingCounters(0, true, false)
 			sh.overall.StaleShares.Add(1)
+			sh.overall.updateRollingCounters(0, true, false)
 			RecordStaleShare(ctx)
 			return ctx.ReplyStaleShare(event.Id)
 		}
@@ -303,13 +364,17 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 				} else if strings.Contains(err.Error(), "ErrInvalidPoW") {
 					ctx.Logger.Warn("block rejected, incorred pow")
 					stats.StaleShares.Add(1)
+					stats.updateRollingCounters(0, true, false) // treating as stale for rolling
 					sh.overall.InvalidShares.Add(1)
+					sh.overall.updateRollingCounters(0, false, true)
 					RecordInvalidShare(ctx)
 					return ctx.ReplyIncorrectPow(event.Id)
 				} else {
 					ctx.Logger.Warn("block rejected, unknown issue", zap.Error(err))
 					stats.InvalidShares.Add(1)
+					stats.updateRollingCounters(0, false, true)
 					sh.overall.InvalidShares.Add(1)
+					sh.overall.updateRollingCounters(0, false, true)
 					RecordInvalidShare(ctx)
 					return ctx.ReplyBadShare(event.Id)
 				}
@@ -321,13 +386,17 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 				ctx.Logger.Warn("weak share")
 			}
 			stats.InvalidShares.Add(1)
+			stats.updateRollingCounters(0, false, true)
 			sh.overall.InvalidShares.Add(1)
+			sh.overall.updateRollingCounters(0, false, true)
 			RecordWeakShare(ctx)
 			return ctx.ReplyLowDiffShare(event.Id)
 		}
 	} else {
 		stats.InvalidShares.Add(1)
+		stats.updateRollingCounters(0, false, true)
 		sh.overall.InvalidShares.Add(1)
+		sh.overall.updateRollingCounters(0, false, true)
 		RecordInvalidShare(ctx)
 		return ctx.ReplyIncorrectPow(event.Id)
 	}
@@ -335,7 +404,9 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 	stats.SharesFound.Add(1)
 	stats.SharesDiff.Add(state.stratumDiff.hashValue)
 	stats.LastShare = time.Now()
+	stats.updateRollingCounters(state.stratumDiff.hashValue, false, false)
 	sh.overall.SharesFound.Add(1)
+	sh.overall.updateRollingCounters(state.stratumDiff.hashValue, false, false)
 	RecordShareFound(ctx, state.stratumDiff.hashValue)
 	stats.BlocksFound.Add(1)
 	sh.overall.BlocksFound.Add(1)
@@ -346,6 +417,8 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 
 func (sh *shareHandler) submit(ctx *gostratum.StratumContext,
 	block *externalapi.DomainBlock, submitInfo *submitInfo, eventId any) error {
+	sh.submitLock.Lock()
+	defer sh.submitLock.Unlock()
 	mutable := block.Header.ToMutable()
 	mutable.SetNonce(submitInfo.nonceVal)
 	block = &externalapi.DomainBlock{
@@ -370,17 +443,31 @@ func (sh *shareHandler) startStatsThread() error {
 		var lines []string
 		totalRate := float64(0)
 		for _, v := range sh.stats {
-			rate := GetAverageHashrateGHs(v)
+			var rate float64
+			var ratioStr string
+			if sh.rollingStats {
+				rate = GetRollingAverageHashrateGHs(v)
+				validShares, staleShares, invalidShares := GetRollingShares(v)
+				ratioStr = fmt.Sprintf("%d/%d/%d", validShares, staleShares, invalidShares)
+			} else {
+				rate = GetAverageHashrateGHs(v)
+				ratioStr = fmt.Sprintf("%d/%d/%d", v.SharesFound.Load(), v.StaleShares.Load(), v.InvalidShares.Load())
+			}
 			totalRate += rate
 			rateStr := stringifyHashrate(rate)
-			ratioStr := fmt.Sprintf("%d/%d/%d", v.SharesFound.Load(), v.StaleShares.Load(), v.InvalidShares.Load())
 			lines = append(lines, fmt.Sprintf(" %-15s| %14.14s | %14.14s | %12d | %11s",
 				v.WorkerName, rateStr, ratioStr, v.BlocksFound.Load(), time.Since(v.StartTime).Round(time.Second)))
 		}
 		sort.Strings(lines)
 		str += strings.Join(lines, "\n")
 		rateStr := stringifyHashrate(totalRate)
-		ratioStr := fmt.Sprintf("%d/%d/%d", sh.overall.SharesFound.Load(), sh.overall.StaleShares.Load(), sh.overall.InvalidShares.Load())
+		var ratioStr string
+		if sh.rollingStats {
+			validShares, staleShares, invalidShares := GetRollingShares(&sh.overall)
+			ratioStr = fmt.Sprintf("%d/%d/%d", validShares, staleShares, invalidShares)
+		} else {
+			ratioStr = fmt.Sprintf("%d/%d/%d", sh.overall.SharesFound.Load(), sh.overall.StaleShares.Load(), sh.overall.InvalidShares.Load())
+		}
 		str += "\n-------------------------------------------------------------------------------\n"
 		str += fmt.Sprintf("                | %14.14s | %14.14s | %12d | %11s",
 			rateStr, ratioStr, sh.overall.BlocksFound.Load(), time.Since(start).Round(time.Second))
@@ -395,6 +482,56 @@ func (sh *shareHandler) startStatsThread() error {
 
 func GetAverageHashrateGHs(stats *WorkStats) float64 {
 	return stats.SharesDiff.Load() / time.Since(stats.StartTime).Seconds()
+}
+
+func GetRollingAverageHashrateGHs(stats *WorkStats) float64 {
+	stats.rollingLock.Lock()
+	defer stats.rollingLock.Unlock()
+
+	now := time.Now()
+	hourKey := now.Unix() / 3600
+	totalDiff := float64(0)
+	hours := 0
+
+	// Sum up the last 24 hours
+	for i := int64(0); i < 24; i++ {
+		key := hourKey - i
+		if diff, exists := stats.RollingSharesDiff[key]; exists {
+			totalDiff += diff
+			hours++
+		}
+	}
+
+	if hours == 0 {
+		return 0
+	}
+
+	// Average over the number of hours with data
+	return totalDiff / float64(hours*3600) // convert to GH/s per second
+}
+
+func GetRollingShares(stats *WorkStats) (valid int64, stale int64, invalid int64) {
+	stats.rollingLock.Lock()
+	defer stats.rollingLock.Unlock()
+
+	now := time.Now()
+	hourKey := now.Unix() / 3600
+
+	// Sum up the last 24 hours
+	for i := int64(0); i < 24; i++ {
+		key := hourKey - i
+		if shares, exists := stats.RollingShares[key]; exists {
+			valid += shares
+		}
+		if staleShares, exists := stats.RollingStaleShares[key]; exists {
+			stale += staleShares
+		}
+		if invalidShares, exists := stats.RollingInvalidShares[key]; exists {
+			invalid += invalidShares
+		}
+	}
+
+	return valid, stale, invalid
 }
 
 func stringifyHashrate(ghs float64) string {

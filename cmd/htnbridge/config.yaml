@@ -5,7 +5,8 @@ stratum_port: :5555
 # hoosat_address: address/port of the rpc server for hoosat, typically 13110
 # For a list of public nodes, run `nslookup mainnet-dnsseed.daglabs-dev.com`
 # uncomment for to use a public node
-hoosat_address: localhost:42420
+#hoosat_address: 192.168.1.170:42453
+hoosat_address: 127.0.0.1:42420
 
 # min_share_diff: only accept shares of the specified difficulty (or higher) from
 # the miner(s).  Higher values will reduce the number of shares submitted, thereby
@@ -32,6 +33,10 @@ min_share_diff: 0.0001
 # joining/disconnecting, blocks found, and errors will be printed
 print_stats: true
 
+# rolling_stats: if true will show daily rolling average hashrate and shares,
+# if false will show cumulative hashrate and shares since worker start
+rolling_stats: true
+
 # log_to_file: if true logs will be written to a file local to the executable
 log_to_file: true
 
@@ -41,3 +46,6 @@ log_to_file: true
 # `curl http://localhost:{prom_port}/metrics`
 # Note `:PORT` format is needed if not specifiying a specific ip range
 prom_port: :2114
+
+
+mine_when_not_synced: true
