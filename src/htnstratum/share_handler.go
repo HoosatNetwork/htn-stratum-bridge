@@ -494,7 +494,7 @@ func GetRollingAverageHashrateGHs(stats *WorkStats) float64 {
 	hours := 0
 
 	// Sum up the last 24 hours
-	for i := int64(0); i < 24; i++ {
+	for i := range int64(24) {
 		key := hourKey - i
 		if diff, exists := stats.RollingSharesDiff[key]; exists {
 			totalDiff += diff
@@ -518,7 +518,7 @@ func GetRollingShares(stats *WorkStats) (valid int64, stale int64, invalid int64
 	hourKey := now.Unix() / 3600
 
 	// Sum up the last 24 hours
-	for i := int64(0); i < 24; i++ {
+	for i := range int64(24) {
 		key := hourKey - i
 		if shares, exists := stats.RollingShares[key]; exists {
 			valid += shares

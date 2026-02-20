@@ -68,10 +68,7 @@ func ListenAndServe(cfg BridgeConfig) error {
 		StartPromServer(logger, cfg.PromPort)
 	}
 
-	blockWaitTime := cfg.BlockWaitTime
-	if blockWaitTime < minBlockWaitTime {
-		blockWaitTime = minBlockWaitTime
-	}
+	blockWaitTime := max(cfg.BlockWaitTime, minBlockWaitTime)
 	htnApi, err := NewHoosatAPI(cfg.RPCServer, blockWaitTime, logger)
 	if err != nil {
 		return err
@@ -93,10 +90,7 @@ func ListenAndServe(cfg BridgeConfig) error {
 	if minDiff == 0 {
 		minDiff = 4
 	}
-	extranonceSize := cfg.ExtranonceSize
-	if extranonceSize > 3 {
-		extranonceSize = 3
-	}
+	extranonceSize := min(cfg.ExtranonceSize, 3)
 	clientHandler := newClientListener(logger, shareHandler, minDiff, int8(extranonceSize))
 	handlers := gostratum.DefaultHandlers()
 	// override the submit handler with an actual useful handler

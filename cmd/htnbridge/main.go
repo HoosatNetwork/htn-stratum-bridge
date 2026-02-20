@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
+
 	"log"
 	"os"
 	"path"
@@ -17,7 +17,7 @@ func main() {
 	pwd, _ := os.Getwd()
 	fullPath := path.Join(pwd, "config.yaml")
 	log.Printf("loading config @ `%s`", fullPath)
-	rawCfg, err := ioutil.ReadFile(fullPath)
+	rawCfg, err := os.ReadFile(fullPath)
 	if err != nil {
 		log.Printf("config file not found: %s", err)
 		os.Exit(1)

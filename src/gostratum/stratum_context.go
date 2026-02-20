@@ -111,7 +111,7 @@ func (sc *StratumContext) write(data []byte) error {
 }
 
 func (sc *StratumContext) writeWithBackoff(data []byte) error {
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		err := sc.write(data)
 		if err == nil {
 			return nil

@@ -2,7 +2,8 @@ package htnstratum
 
 import (
 	"encoding/json"
-	"io/ioutil"
+	"os"
+
 	"log"
 	"math/big"
 	"net"
@@ -15,7 +16,7 @@ import (
 )
 
 func TestHeaderSerialization(t *testing.T) {
-	raw, err := ioutil.ReadFile("./example_header.json")
+	raw, err := os.ReadFile("./example_header.json")
 	if err != nil {
 		t.Fatal(err)
 	}
