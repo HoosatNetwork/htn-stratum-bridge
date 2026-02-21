@@ -416,19 +416,27 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 }
 
 func (sh *shareHandler) submit(ctx *gostratum.StratumContext,
-	block *externalapi.DomainBlock, submitInfo *submitInfo, eventId any) error {
-	sh.submitLock.Lock()
-	defer sh.submitLock.Unlock()
-	mutable := block.Header.ToMutable()
-	mutable.SetNonce(submitInfo.nonceVal)
-	block = &externalapi.DomainBlock{
-		Header:       mutable.ToImmutable(),
-		Transactions: block.Transactions,
-	}
-	state := GetMiningState(ctx)
-	_, err := sh.hoosat.SubmitBlock(block, submitInfo.powHash.String())
-	state.RemoveJob(int(submitInfo.jobId))
-	return err
+        block *externalapi.DomainBlock, submitInfo *submitInfo, eventId any) error {
+        sh.submitLock.Lock()
+        defer sh.submitLock.Unlock()
+        // Refuse to submit blocks when the node is not synced.
+        info, err := sh.hoosat.GetInfo()
+        if err != nil {
+                return errors.Wrap(err, "failed to query node sync state before block submit")
+        }
+        if !info.IsSynced {
+                return errors.New("node is not synced; refusing to submit block")
+        }
+        mutable := block.Header.ToMutable()
+        mutable.SetNonce(submitInfo.nonceVal)
+        block = &externalapi.DomainBlock{
+                Header:       mutable.ToImmutable(),
+                Transactions: block.Transactions,
+        }
+        state := GetMiningState(ctx)
+        _, err = sh.hoosat.SubmitBlock(block, submitInfo.powHash.String())
+        state.RemoveJob(int(submitInfo.jobId))
+        return err
 }
 
 func (sh *shareHandler) startStatsThread() error {
