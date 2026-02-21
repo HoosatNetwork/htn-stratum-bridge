@@ -118,6 +118,18 @@ func (htnApi *HtnApi) startCacheCleanupThread(ctx context.Context) {
 	}
 }
 
+func (htnApi *HtnApi) invalidateGBTCache() {
+	// If caching is disabled, nothing to do.
+	if htnApi.gbtCacheTTL == 0 {
+		return
+	}
+
+	htnApi.gbtCacheMu.Lock()
+	clear(htnApi.gbtCache)
+	htnApi.gbtCacheMu.Unlock()
+}
+
+
 func (htnApi *HtnApi) reconnect() error {
 	if htnApi.hoosat != nil {
 		return htnApi.hoosat.Reconnect()
@@ -128,6 +140,7 @@ func (htnApi *HtnApi) reconnect() error {
 		return err
 	}
 	htnApi.hoosat = client
+	htnApi.invalidateGBTCache()
 	return nil
 }
 
@@ -155,6 +168,7 @@ func (htnApi *HtnApi) waitForSync(verbose bool) error {
 func (htnApi *HtnApi) startBlockTemplateListener(ctx context.Context, blockReadyCb func()) {
 	blockReadyChan := make(chan bool)
 	err := htnApi.hoosat.RegisterForNewBlockTemplateNotifications(func(_ *appmessage.NewBlockTemplateNotificationMessage) {
+		htnApi.invalidateGBTCache()
 		blockReadyChan <- true
 	})
 	if err != nil {
