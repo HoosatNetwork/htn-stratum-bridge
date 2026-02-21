@@ -49,3 +49,10 @@ prom_port: :2114
 
 
 mine_when_not_synced: false
+
+# gbt_cache_ttl: how long to cache GetBlockTemplate responses per payout address.
+# Caching reduces RPC load on the node when many workers request templates
+# simultaneously after a new block notification.
+# Set to 0 (or omit) to disable caching.
+# Settings this WILL remove the miner UserAgent / work attribution in the explorer for mined blocks
+# gbt_cache_ttl: 200ms
