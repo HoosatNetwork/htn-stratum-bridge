@@ -163,7 +163,7 @@ func (htnApi *HtnApi) waitForSync(verbose bool) error {
 func (htnApi *HtnApi) startBlockTemplateListener(ctx context.Context, blockReadyCb func()) {
 	blockReadyChan := make(chan bool)
 	err := htnApi.hoosat.RegisterForNewBlockTemplateNotifications(func(_ *appmessage.NewBlockTemplateNotificationMessage) {
-		htnApi.invalidateGBTCache()
+		// htnApi.invalidateGBTCache() // Happens far too often, and not just for new Tips.  Instead rely on 100ms TTL
 		blockReadyChan <- true
 	})
 	if err != nil {
@@ -207,38 +207,44 @@ func sanitizeWorkerID(s string) string {
 }
 
 func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll int64, vote int64) (*appmessage.GetBlockTemplateResponseMessage, error) {
+	payoutAddress := client.WalletAddr
+
+	// Build extraData string.
+	// For normal mining when caching is enabled, we keep extraData constant so multiple
+	// workers can share the cached template for the same payout address.
+	// For poll/vote we preserve the previous behavior (includes worker attribution).
+	var extraData string
 	if poll != 0 && vote != 0 {
-		template, err := htnApi.hoosat.GetBlockTemplate(client.WalletAddr,
-			fmt.Sprintf(`'%s' via htn-stratum-bridge_%s as worker %s poll %d vote %d `, client.RemoteApp, version, sanitizeWorkerID(client.WorkerName), poll, vote))
-		if err != nil {
-			return nil, errors.Wrap(err, "failed fetching new block template from hoosat")
-		}
-		return template, nil
+		extraData = fmt.Sprintf(`'%s' via htn-stratum-bridge_%s as worker %s poll %d vote %d`,
+			client.RemoteApp, version, sanitizeWorkerID(client.WorkerName), poll, vote)
+	} else if htnApi.gbtCacheTTL > 0 {
+		extraData = fmt.Sprintf(`Mined via htn-stratum-bridge version %s`, version)
 	} else {
-		template, err := htnApi.hoosat.GetBlockTemplate(client.WalletAddr,
-			fmt.Sprintf(`'%s' via htn-stratum-bridge_%s as worker %s`, client.RemoteApp, version, sanitizeWorkerID(client.WorkerName)))
-		if err != nil {
-			return nil, errors.Wrap(err, "failed fetching new block template from hoosat")
-		}
-		return template, nil
+		extraData = fmt.Sprintf(`'%s' via htn-stratum-bridge_%s as worker %s`,
+			client.RemoteApp, version, sanitizeWorkerID(client.WorkerName))
 	}
 
-<<<<<<< HEAD
-=======
-	// Request block template with selected payout address, using per-address
-	// cache when gbtCacheTTL > 0 to reduce RPC load on the node.
-	// On a cache miss the lock is released before the RPC call so concurrent
-	// requests for different payout addresses proceed in parallel; only map
-	// reads/writes are protected by the mutex.
-	if htnApi.gbtCacheTTL > 0 {
+	// Use cache only for normal mining templates (poll/vote templates must remain uncached,
+	// because their extraData differs).
+	if htnApi.gbtCacheTTL > 0 && poll == 0 && vote == 0 {
 		htnApi.gbtCacheMu.Lock()
 		entry, ok := htnApi.gbtCache[payoutAddress]
 		if ok && time.Since(entry.fetchedAt) < htnApi.gbtCacheTTL {
 			cached := entry.template
 			htnApi.gbtCacheMu.Unlock()
+
+			hits := atomic.AddUint64(&htnApi.gbtCacheHits, 1)
+			misses := atomic.LoadUint64(&htnApi.gbtCacheMisses)
+			total := hits + misses
+			if total%10 == 0 {
+				rate := (float64(hits) / float64(total)) * 100.0
+				htnApi.logger.Infof("GBT cache hit rate %.2f%% (%d/%d), ttl=%s", rate, hits, total, htnApi.gbtCacheTTL)
+			}
+
 			return cached, nil
 		}
 		htnApi.gbtCacheMu.Unlock()
+		atomic.AddUint64(&htnApi.gbtCacheMisses, 1)
 
 		// Cache miss or expired – fetch outside the lock.
 		template, err := htnApi.hoosat.GetBlockTemplate(payoutAddress, extraData)
@@ -251,11 +257,10 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 		return template, nil
 	}
 
+	// Cache disabled or poll/vote path.
 	template, err := htnApi.hoosat.GetBlockTemplate(payoutAddress, extraData)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed fetching new block template from hoosat")
 	}
-
 	return template, nil
->>>>>>> 88a2098 (feat: add per-payout-address GBT response cache to reduce node RPC load)
 }
