@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Hoosat-Oy/HTND/app/appmessage"
@@ -14,15 +16,30 @@ import (
 	"go.uber.org/zap"
 )
 
+// gbtCacheEntry holds a cached GetBlockTemplate response and the time it was fetched.
+type gbtCacheEntry struct {
+	template  *appmessage.GetBlockTemplateResponseMessage
+	fetchedAt time.Time
+}
+
 type HtnApi struct {
 	address       string
 	blockWaitTime time.Duration
 	logger        *zap.SugaredLogger
 	hoosat        *rpcclient.RPCClient
 	connected     bool
+
+	// GBT response cache (per payout address)
+	gbtCache    map[string]*gbtCacheEntry
+	gbtCacheTTL time.Duration
+	gbtCacheMu  sync.Mutex
+
+	// Stats
+	gbtCacheHits   uint64
+	gbtCacheMisses uint64
 }
 
-func NewHoosatAPI(address string, blockWaitTime time.Duration, logger *zap.SugaredLogger) (*HtnApi, error) {
+func NewHoosatAPI(address string, blockWaitTime time.Duration, logger *zap.SugaredLogger, gbtCacheTTL time.Duration) (*HtnApi, error) {
 	client, err := rpcclient.NewRPCClient(address)
 	if err != nil {
 		return nil, err
@@ -34,6 +51,8 @@ func NewHoosatAPI(address string, blockWaitTime time.Duration, logger *zap.Sugar
 		logger:        logger.With(zap.String("component", "hoosatapi:"+address)),
 		hoosat:        client,
 		connected:     true,
+		gbtCache:      make(map[string]*gbtCacheEntry),
+		gbtCacheTTL:   gbtCacheTTL,
 	}, nil
 }
 
@@ -43,6 +62,7 @@ func (htnApi *HtnApi) Start(ctx context.Context, cfg BridgeConfig, blockCb func(
 	}
 	go htnApi.startBlockTemplateListener(ctx, blockCb)
 	go htnApi.startStatsThread(ctx)
+	go htnApi.startCacheCleanupThread(ctx)
 }
 
 func (htnApi *HtnApi) startStatsThread(ctx context.Context) {
@@ -64,6 +84,31 @@ func (htnApi *HtnApi) startStatsThread(ctx context.Context) {
 				continue
 			}
 			RecordNetworkStats(response.NetworkHashesPerSecond, dagResponse.BlockCount, dagResponse.Difficulty)
+		}
+	}
+}
+
+// startCacheCleanupThread periodically evicts expired GBT cache entries so
+// the cache map does not grow unbounded when many distinct payout addresses
+// are seen over time.  It is a no-op when caching is disabled (TTL == 0).
+func (htnApi *HtnApi) startCacheCleanupThread(ctx context.Context) {
+	if htnApi.gbtCacheTTL == 0 {
+		return
+	}
+	ticker := time.NewTicker(htnApi.gbtCacheTTL * 2)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			htnApi.gbtCacheMu.Lock()
+			for addr, entry := range htnApi.gbtCache {
+				if time.Since(entry.fetchedAt) >= htnApi.gbtCacheTTL {
+					delete(htnApi.gbtCache, addr)
+				}
+			}
+			htnApi.gbtCacheMu.Unlock()
 		}
 	}
 }
@@ -164,4 +209,39 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 		return template, nil
 	}
 
+<<<<<<< HEAD
+=======
+	// Request block template with selected payout address, using per-address
+	// cache when gbtCacheTTL > 0 to reduce RPC load on the node.
+	// On a cache miss the lock is released before the RPC call so concurrent
+	// requests for different payout addresses proceed in parallel; only map
+	// reads/writes are protected by the mutex.
+	if htnApi.gbtCacheTTL > 0 {
+		htnApi.gbtCacheMu.Lock()
+		entry, ok := htnApi.gbtCache[payoutAddress]
+		if ok && time.Since(entry.fetchedAt) < htnApi.gbtCacheTTL {
+			cached := entry.template
+			htnApi.gbtCacheMu.Unlock()
+			return cached, nil
+		}
+		htnApi.gbtCacheMu.Unlock()
+
+		// Cache miss or expired – fetch outside the lock.
+		template, err := htnApi.hoosat.GetBlockTemplate(payoutAddress, extraData)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed fetching new block template from hoosat")
+		}
+		htnApi.gbtCacheMu.Lock()
+		htnApi.gbtCache[payoutAddress] = &gbtCacheEntry{template: template, fetchedAt: time.Now()}
+		htnApi.gbtCacheMu.Unlock()
+		return template, nil
+	}
+
+	template, err := htnApi.hoosat.GetBlockTemplate(payoutAddress, extraData)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed fetching new block template from hoosat")
+	}
+
+	return template, nil
+>>>>>>> 88a2098 (feat: add per-payout-address GBT response cache to reduce node RPC load)
 }
