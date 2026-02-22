@@ -89,7 +89,7 @@ func ListenAndServe(cfg BridgeConfig) error {
 		go http.ListenAndServe(cfg.HealthCheckPort, nil)
 	}
 
-	shareHandler := newShareHandler(htnApi.hoosat, cfg.RollingStats)
+	shareHandler := newShareHandler(htnApi.hoosat, cfg.RollingStats,htnApi.invalidateGBTCache)
 	minDiff := cfg.MinShareDiff
 	if minDiff == 0 {
 		minDiff = 4

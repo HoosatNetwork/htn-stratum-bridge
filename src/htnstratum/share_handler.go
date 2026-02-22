@@ -56,6 +56,7 @@ type shareHandler struct {
 	rollingStats bool
 	tipBlueScore uint64
 	submitLock   sync.Mutex
+        invalidateGBTCache func()
 }
 
 type BanInfo struct {
@@ -90,7 +91,7 @@ func TryToBan(address string) {
 	bans = append(bans, BanInfo{Address: address, Times: 1})
 }
 
-func newShareHandler(hoosat *rpcclient.RPCClient, rollingStats bool) *shareHandler {
+func newShareHandler(hoosat *rpcclient.RPCClient, rollingStats bool, invalidateGBTCache func()) *shareHandler {
 	return &shareHandler{
 		hoosat: hoosat,
 		stats:  map[string]*WorkStats{},
@@ -100,8 +101,9 @@ func newShareHandler(hoosat *rpcclient.RPCClient, rollingStats bool) *shareHandl
 			RollingStaleShares:   make(map[int64]int64),
 			RollingInvalidShares: make(map[int64]int64),
 		},
-		rollingStats: rollingStats,
-		statsLock:    sync.Mutex{},
+		rollingStats:       rollingStats,
+		statsLock:          sync.Mutex{},
+		invalidateGBTCache: invalidateGBTCache,
 	}
 }
 
@@ -435,6 +437,9 @@ func (sh *shareHandler) submit(ctx *gostratum.StratumContext,
 	}
 	state := GetMiningState(ctx)
 	_, err = sh.hoosat.SubmitBlock(block, submitInfo.powHash.String())
+        if err == nil && sh.invalidateGBTCache != nil {
+	        sh.invalidateGBTCache() // We solved a block - clear the cache
+        }
 	state.RemoveJob(int(submitInfo.jobId))
 	return err
 }
