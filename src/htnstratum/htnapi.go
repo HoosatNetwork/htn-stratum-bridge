@@ -124,7 +124,6 @@ func (htnApi *HtnApi) invalidateGBTCache() {
 	htnApi.gbtCacheMu.Unlock()
 }
 
-
 func (htnApi *HtnApi) reconnect() error {
 	if htnApi.hoosat != nil {
 		return htnApi.hoosat.Reconnect()
@@ -146,7 +145,7 @@ func (htnApi *HtnApi) waitForSync(verbose bool) error {
 	for {
 		clientInfo, err := htnApi.hoosat.GetInfo()
 		if err != nil {
-			return errors.Wrapf(err, "error fetching server info from hoosat @ %s", htnApi.address)
+			clientInfo.IsSynced = false
 		}
 		if clientInfo.IsSynced {
 			break
@@ -233,13 +232,13 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 			cached := entry.template
 			htnApi.gbtCacheMu.Unlock()
 
-                       	hits := atomic.AddUint64(&htnApi.gbtCacheHits, 1)
-		        misses := atomic.LoadUint64(&htnApi.gbtCacheMisses)
-		        total := hits + misses
-		        if total%1000 == 0 {
-			        rate := (float64(hits) / float64(total)) * 100.0
-			        htnApi.logger.Infof("GBT cache hit rate %.2f%% (%d/%d), ttl=%s", rate, hits, total, htnApi.gbtCacheTTL)
-		        }
+			hits := atomic.AddUint64(&htnApi.gbtCacheHits, 1)
+			misses := atomic.LoadUint64(&htnApi.gbtCacheMisses)
+			total := hits + misses
+			if total%1000 == 0 {
+				rate := (float64(hits) / float64(total)) * 100.0
+				htnApi.logger.Infof("GBT cache hit rate %.2f%% (%d/%d), ttl=%s", rate, hits, total, htnApi.gbtCacheTTL)
+			}
 			return cached, nil
 		}
 		htnApi.gbtCacheMu.Unlock()
