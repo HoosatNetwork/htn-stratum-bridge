@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Hoosat-Oy/HTND/app/appmessage"
@@ -14,15 +16,30 @@ import (
 	"go.uber.org/zap"
 )
 
+// gbtCacheEntry holds a cached GetBlockTemplate response and the time it was fetched.
+type gbtCacheEntry struct {
+	template  *appmessage.GetBlockTemplateResponseMessage
+	fetchedAt time.Time
+}
+
 type HtnApi struct {
 	address       string
 	blockWaitTime time.Duration
 	logger        *zap.SugaredLogger
 	hoosat        *rpcclient.RPCClient
 	connected     bool
+
+	// GBT response cache (per payout address)
+	gbtCache    map[string]*gbtCacheEntry
+	gbtCacheTTL time.Duration
+	gbtCacheMu  sync.Mutex
+
+	// Stats
+	gbtCacheHits   uint64
+	gbtCacheMisses uint64
 }
 
-func NewHoosatAPI(address string, blockWaitTime time.Duration, logger *zap.SugaredLogger) (*HtnApi, error) {
+func NewHoosatAPI(address string, blockWaitTime time.Duration, logger *zap.SugaredLogger, gbtCacheTTL time.Duration) (*HtnApi, error) {
 	client, err := rpcclient.NewRPCClient(address)
 	if err != nil {
 		return nil, err
@@ -34,6 +51,8 @@ func NewHoosatAPI(address string, blockWaitTime time.Duration, logger *zap.Sugar
 		logger:        logger.With(zap.String("component", "hoosatapi:"+address)),
 		hoosat:        client,
 		connected:     true,
+		gbtCache:      make(map[string]*gbtCacheEntry),
+		gbtCacheTTL:   gbtCacheTTL,
 	}, nil
 }
 
@@ -43,6 +62,7 @@ func (htnApi *HtnApi) Start(ctx context.Context, cfg BridgeConfig, blockCb func(
 	}
 	go htnApi.startBlockTemplateListener(ctx, blockCb)
 	go htnApi.startStatsThread(ctx)
+	go htnApi.startCacheCleanupThread(ctx)
 }
 
 func (htnApi *HtnApi) startStatsThread(ctx context.Context) {
@@ -68,6 +88,43 @@ func (htnApi *HtnApi) startStatsThread(ctx context.Context) {
 	}
 }
 
+// startCacheCleanupThread periodically evicts expired GBT cache entries so
+// the cache map does not grow unbounded when many distinct payout addresses
+// are seen over time.  It is a no-op when caching is disabled (TTL == 0).
+func (htnApi *HtnApi) startCacheCleanupThread(ctx context.Context) {
+	if htnApi.gbtCacheTTL == 0 {
+		return
+	}
+	ticker := time.NewTicker(htnApi.gbtCacheTTL * 2)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			htnApi.gbtCacheMu.Lock()
+			for addr, entry := range htnApi.gbtCache {
+				if time.Since(entry.fetchedAt) >= htnApi.gbtCacheTTL {
+					delete(htnApi.gbtCache, addr)
+				}
+			}
+			htnApi.gbtCacheMu.Unlock()
+		}
+	}
+}
+
+func (htnApi *HtnApi) invalidateGBTCache() {
+	// If caching is disabled, nothing to do.
+	if htnApi.gbtCacheTTL == 0 {
+		return
+	}
+
+	htnApi.gbtCacheMu.Lock()
+	clear(htnApi.gbtCache)
+	htnApi.gbtCacheMu.Unlock()
+}
+
+
 func (htnApi *HtnApi) reconnect() error {
 	if htnApi.hoosat != nil {
 		return htnApi.hoosat.Reconnect()
@@ -78,6 +135,7 @@ func (htnApi *HtnApi) reconnect() error {
 		return err
 	}
 	htnApi.hoosat = client
+	htnApi.invalidateGBTCache()
 	return nil
 }
 
@@ -105,6 +163,7 @@ func (htnApi *HtnApi) waitForSync(verbose bool) error {
 func (htnApi *HtnApi) startBlockTemplateListener(ctx context.Context, blockReadyCb func()) {
 	blockReadyChan := make(chan bool)
 	err := htnApi.hoosat.RegisterForNewBlockTemplateNotifications(func(_ *appmessage.NewBlockTemplateNotificationMessage) {
+		// htnApi.invalidateGBTCache() // Happens far too often, and not just for new Tips.  Instead rely on 100ms TTL
 		blockReadyChan <- true
 	})
 	if err != nil {
@@ -148,20 +207,59 @@ func sanitizeWorkerID(s string) string {
 }
 
 func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll int64, vote int64) (*appmessage.GetBlockTemplateResponseMessage, error) {
+	payoutAddress := client.WalletAddr
+
+	// Build extraData string.
+	// For normal mining when caching is enabled, we keep extraData constant so multiple
+	// workers can share the cached template for the same payout address.
+	// For poll/vote we preserve the previous behavior (includes worker attribution).
+	var extraData string
 	if poll != 0 && vote != 0 {
-		template, err := htnApi.hoosat.GetBlockTemplate(client.WalletAddr,
-			fmt.Sprintf(`'%s' via htn-stratum-bridge_%s as worker %s poll %d vote %d `, client.RemoteApp, version, sanitizeWorkerID(client.WorkerName), poll, vote))
-		if err != nil {
-			return nil, errors.Wrap(err, "failed fetching new block template from hoosat")
-		}
-		return template, nil
+		extraData = fmt.Sprintf(`'%s' via htn-stratum-bridge_%s as worker %s poll %d vote %d`,
+			client.RemoteApp, version, sanitizeWorkerID(client.WorkerName), poll, vote)
+	} else if htnApi.gbtCacheTTL > 0 {
+		extraData = fmt.Sprintf(`Mined via htn-stratum-bridge version %s`, version)
 	} else {
-		template, err := htnApi.hoosat.GetBlockTemplate(client.WalletAddr,
-			fmt.Sprintf(`'%s' via htn-stratum-bridge_%s as worker %s`, client.RemoteApp, version, sanitizeWorkerID(client.WorkerName)))
+		extraData = fmt.Sprintf(`'%s' via htn-stratum-bridge_%s as worker %s`,
+			client.RemoteApp, version, sanitizeWorkerID(client.WorkerName))
+	}
+
+	// Use cache only for normal mining templates (poll/vote templates must remain uncached,
+	// because their extraData differs).
+	if htnApi.gbtCacheTTL > 0 && poll == 0 && vote == 0 {
+		htnApi.gbtCacheMu.Lock()
+		entry, ok := htnApi.gbtCache[payoutAddress]
+		if ok && time.Since(entry.fetchedAt) < htnApi.gbtCacheTTL {
+			cached := entry.template
+			htnApi.gbtCacheMu.Unlock()
+
+                       	hits := atomic.AddUint64(&htnApi.gbtCacheHits, 1)
+		        misses := atomic.LoadUint64(&htnApi.gbtCacheMisses)
+		        total := hits + misses
+		        if total%1000 == 0 {
+			        rate := (float64(hits) / float64(total)) * 100.0
+			        htnApi.logger.Infof("GBT cache hit rate %.2f%% (%d/%d), ttl=%s", rate, hits, total, htnApi.gbtCacheTTL)
+		        }
+			return cached, nil
+		}
+		htnApi.gbtCacheMu.Unlock()
+		atomic.AddUint64(&htnApi.gbtCacheMisses, 1)
+
+		// Cache miss or expired – fetch outside the lock.
+		template, err := htnApi.hoosat.GetBlockTemplate(payoutAddress, extraData)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed fetching new block template from hoosat")
 		}
+		htnApi.gbtCacheMu.Lock()
+		htnApi.gbtCache[payoutAddress] = &gbtCacheEntry{template: template, fetchedAt: time.Now()}
+		htnApi.gbtCacheMu.Unlock()
 		return template, nil
 	}
 
+	// Cache disabled or poll/vote path.
+	template, err := htnApi.hoosat.GetBlockTemplate(payoutAddress, extraData)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed fetching new block template from hoosat")
+	}
+	return template, nil
 }

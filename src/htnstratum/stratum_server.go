@@ -14,7 +14,7 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-const version = "v1.6.8"
+const version = "v1.6.9"
 const minBlockWaitTime = 100 * time.Millisecond
 
 type BridgeConfig struct {
@@ -35,6 +35,10 @@ type BridgeConfig struct {
 	MineWhenNotSynced bool          `yaml:"mine_when_not_synced"`
 	Poll              int64         `yaml:"poll"`
 	Vote              int64         `yaml:"vote"`
+
+	// GbtCacheTTL is how long to cache GetBlockTemplate responses per payout address.
+	// A value of 0 (the default) disables caching.
+	GbtCacheTTL time.Duration `yaml:"gbt_cache_ttl"`
 }
 
 func configureZap(cfg BridgeConfig) (*zap.SugaredLogger, func()) {
@@ -68,8 +72,8 @@ func ListenAndServe(cfg BridgeConfig) error {
 		StartPromServer(logger, cfg.PromPort)
 	}
 
-	blockWaitTime := max(cfg.BlockWaitTime, minBlockWaitTime)
-	htnApi, err := NewHoosatAPI(cfg.RPCServer, blockWaitTime, logger)
+        blockWaitTime := max(cfg.BlockWaitTime, minBlockWaitTime)
+        htnApi, err := NewHoosatAPI(cfg.RPCServer, blockWaitTime, logger, cfg.GbtCacheTTL)
 	if err != nil {
 		return err
 	}
