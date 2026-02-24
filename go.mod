@@ -3,7 +3,7 @@ module github.com/Hoosat-Oy/htn-stratum-bridge
 go 1.26.0
 
 require (
-	github.com/Hoosat-Oy/HTND v1.6.8
+	github.com/Hoosat-Oy/HTND v1.6.9
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/mattn/go-colorable v0.1.14
@@ -26,6 +26,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v1.20.99 // indirect
 	github.com/prometheus/procfs v0.19.2 // indirect
