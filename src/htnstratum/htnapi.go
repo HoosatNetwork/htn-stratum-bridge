@@ -144,10 +144,8 @@ func (htnApi *HtnApi) waitForSync(verbose bool) error {
 	}
 	for {
 		clientInfo, err := htnApi.hoosat.GetInfo()
-		if err != nil {
-			clientInfo.IsSynced = false
-		}
-		if clientInfo.IsSynced {
+		synced := err == nil && clientInfo.IsSynced
+		if synced {
 			break
 		}
 		htnApi.logger.Warn("HTN is not synced, waiting for sync before starting bridge")
