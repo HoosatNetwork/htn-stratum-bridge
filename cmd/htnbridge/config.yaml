@@ -55,4 +55,4 @@ mine_when_not_synced: false
 # simultaneously after a new block notification.
 # Set to 0 (or omit) to disable caching.
 # Settings this WILL remove the miner UserAgent / work attribution in the explorer for mined blocks
-# gbt_cache_ttl: 200ms
+gbt_cache_ttl: 190ms
