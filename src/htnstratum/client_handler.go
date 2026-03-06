@@ -29,18 +29,20 @@ type clientListener struct {
 	extranonceSize   int8
 	maxExtranonce    int32
 	nextExtranonce   int32
+	removeDisconnectedFromStats bool
 }
 
-func newClientListener(logger *zap.SugaredLogger, shareHandler *shareHandler, minShareDiff float64, extranonceSize int8) *clientListener {
+func newClientListener(logger *zap.SugaredLogger, shareHandler *shareHandler, minShareDiff float64, extranonceSize int8, removeDisconnectedFromStats bool) *clientListener {
 	return &clientListener{
-		logger:         logger,
-		minShareDiff:   minShareDiff,
-		extranonceSize: extranonceSize,
-		maxExtranonce:  int32(math.Pow(2, (8*math.Min(float64(extranonceSize), 3))) - 1),
-		nextExtranonce: 0,
-		clientLock:     sync.RWMutex{},
-		shareHandler:   shareHandler,
-		clients:        make(map[int32]*gostratum.StratumContext),
+		logger:                      logger,
+		minShareDiff:                minShareDiff,
+		extranonceSize:              extranonceSize,
+		maxExtranonce:               int32(math.Pow(2, (8*math.Min(float64(extranonceSize), 3))) - 1),
+		nextExtranonce:              0,
+		clientLock:                  sync.RWMutex{},
+		shareHandler:                shareHandler,
+		clients:                     make(map[int32]*gostratum.StratumContext),
+		removeDisconnectedFromStats: removeDisconnectedFromStats,
 	}
 }
 
@@ -83,7 +85,7 @@ func (c *clientListener) OnDisconnect(ctx *gostratum.StratumContext) {
 	c.clientLock.Unlock()
 	// Remove per-client stats so the disconnected client no longer appears in
 	// the rolling/printed stats table.
-	if c.shareHandler != nil {
+	if c.shareHandler != nil && c.removeDisconnectedFromStats  {
 		c.shareHandler.removeStats(ctx)
 	}
 	RecordDisconnect(ctx)
