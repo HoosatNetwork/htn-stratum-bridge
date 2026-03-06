@@ -45,32 +45,33 @@ func newClientListener(logger *zap.SugaredLogger, shareHandler *shareHandler, mi
 }
 
 func (c *clientListener) OnConnect(ctx *gostratum.StratumContext) {
-	var extranonce int32
+        var extranonce int32
 
-	idx := atomic.AddInt32(&c.clientCounter, 1)
-	ctx.Id = idx
-	c.clientLock.Lock()
-	if c.extranonceSize > 0 {
-		extranonce = c.nextExtranonce
-		if c.nextExtranonce < c.maxExtranonce {
-			c.nextExtranonce++
-		} else {
-			c.nextExtranonce = 0
-			c.logger.Warn("wrapped extranonce! new clients may be duplicating work...")
-		}
-	}
-	c.clients[idx] = ctx
-	c.clientLock.Unlock()
-	ctx.Logger = ctx.Logger.With(zap.Int("client_id", int(ctx.Id)))
+        idx := atomic.AddInt32(&c.clientCounter, 1)
+        ctx.Id = idx
+        c.clientLock.Lock()
+        if c.extranonceSize > 0 {
+                extranonce = c.nextExtranonce
+                if c.nextExtranonce < c.maxExtranonce {
+                        c.nextExtranonce++
+                } else {
+                        c.nextExtranonce = 0
+                        c.logger.Warn("wrapped extranonce! new clients may be duplicating work...")
+                }
+        }
+        c.clients[idx] = ctx
+        c.clientLock.Unlock()
+        ctx.Logger = ctx.Logger.With(zap.Int("client_id", int(ctx.Id)))
 
-	if c.extranonceSize > 0 {
-		ctx.Extranonce = fmt.Sprintf("%0*x", c.extranonceSize*2, extranonce)
-	}
-	go func() {
-		// hacky, but give time for the authorize to go through so we can use the worker name
-		time.Sleep(5 * time.Second)
-		c.shareHandler.getCreateStats(ctx) // create the stats if they don't exist
-	}()
+        if c.extranonceSize > 0 {
+                ctx.Extranonce = fmt.Sprintf("%0*x", c.extranonceSize*2, extranonce)
+        }
+        // Foztor - do not do here, we end up with port scanners being tracked.
+        // go func() {
+                // // hacky, but give time for the authorize to go through so we can use the worker name
+                // time.Sleep(5 * time.Second)
+                // c.shareHandler.getCreateStats(ctx) // create the stats if they don't exist
+        // }()
 }
 
 func (c *clientListener) OnDisconnect(ctx *gostratum.StratumContext) {
