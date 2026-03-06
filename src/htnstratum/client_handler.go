@@ -81,6 +81,11 @@ func (c *clientListener) OnDisconnect(ctx *gostratum.StratumContext) {
 	delete(c.clients, ctx.Id)
 	c.logger.Info("removed client ", ctx.Id)
 	c.clientLock.Unlock()
+	// Remove per-client stats so the disconnected client no longer appears in
+	// the rolling/printed stats table.
+	if c.shareHandler != nil {
+		c.shareHandler.removeStats(ctx)
+	}
 	RecordDisconnect(ctx)
 }
 
