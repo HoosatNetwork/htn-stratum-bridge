@@ -35,7 +35,10 @@ func main() {
 			fmt.Fprintf(os.Stderr, "    	%v (default \"%v\")\n", f.Usage, f.Value)
 		})
 	}
-
+	
+    
+	cfg.RemoveDisconnectedFromStats = true // Default to true
+	
 	flag.StringVar(&cfg.StratumPort, "stratum", cfg.StratumPort, "stratum port to listen on")
 	flag.BoolVar(&cfg.PrintStats, "stats", cfg.PrintStats, "true to show periodic stats to console")
 	flag.StringVar(&cfg.RPCServer, "hoosat_address", cfg.RPCServer, "address of the spectred node")
@@ -52,10 +55,9 @@ func main() {
 	flag.BoolVar(&cfg.MineWhenNotSynced, "minewhennotsynced", cfg.MineWhenNotSynced, "mine when not synced")
 	flag.Int64Var(&cfg.Poll, "poll", cfg.Poll, "Poll id for voting on blocks")
 	flag.Int64Var(&cfg.Vote, "vote", cfg.Vote, "Vote id of the poll for voting on blocks")
-	flag.BoolVar(&cfg.RemoveDisconnectedFromStats, "remove-disconnected-from-stats", cfg.RemoveDisconnectedFromStats,
+	flag.BoolVar(&cfg.RemoveDisconnectedFromStats, "remove_disconnected_from_stats", cfg.RemoveDisconnectedFromStats,
 		"when true, remove disconnected clients from printed stats (default: true)")
-	// Default to true
-	cfg.RemoveDisconnectedFromStats = true
+	
 	flag.Parse()
 
 	if cfg.MinShareDiff == 0 {
