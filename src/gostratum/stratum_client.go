@@ -34,7 +34,7 @@ func spawnClientListener(ctx *StratumContext, connection net.Conn, s *StratumLis
 			return ctx.parentContext.Err() // parent context cancelled
 		}
 		if err != nil { // actual error
-			ctx.Logger.Error("error reading from socket", zap.Error(err))
+			ctx.Logger.Debug("error reading from socket", zap.Error(err))
 			return err
 		}
 	}
@@ -62,3 +62,4 @@ func readFromConnection(connection net.Conn, cb LineCallback) error {
 	}
 	return nil
 }
+
