@@ -77,7 +77,7 @@ func (c *clientListener) OnConnect(ctx *gostratum.StratumContext) {
 func (c *clientListener) OnDisconnect(ctx *gostratum.StratumContext) {
 	ctx.Done()
 	c.clientLock.Lock()
-	c.logger.Info("removing client ", ctx.Id)
+	c.logger.Debug("removing client ", ctx.Id)
 	delete(c.clients, ctx.Id)
 	c.logger.Info("removed client ", ctx.Id)
 	c.clientLock.Unlock()
