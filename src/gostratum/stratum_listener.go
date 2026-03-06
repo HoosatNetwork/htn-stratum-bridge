@@ -127,7 +127,7 @@ func (s *StratumListener) disconnectListener(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case client := <-s.disconnectChannel:
-			s.Logger.Info(fmt.Sprintf("client disconnecting - %s", client.RemoteAddr))
+			s.Logger.Debug(fmt.Sprintf("client disconnecting - %s", client.RemoteAddr))
 			s.stats.Disconnects++
 			if s.ClientListener != nil {
 				s.ClientListener.OnDisconnect(client)
@@ -152,3 +152,4 @@ func (s *StratumListener) tcpListener(ctx context.Context, server net.Listener) 
 		s.newClient(ctx, connection)
 	}
 }
+
