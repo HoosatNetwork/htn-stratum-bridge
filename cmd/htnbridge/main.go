@@ -52,6 +52,10 @@ func main() {
 	flag.BoolVar(&cfg.MineWhenNotSynced, "minewhennotsynced", cfg.MineWhenNotSynced, "mine when not synced")
 	flag.Int64Var(&cfg.Poll, "poll", cfg.Poll, "Poll id for voting on blocks")
 	flag.Int64Var(&cfg.Vote, "vote", cfg.Vote, "Vote id of the poll for voting on blocks")
+	flag.BoolVar(&cfg.RemoveDisconnectedFromStats, "remove-disconnected-from-stats", cfg.RemoveDisconnectedFromStats,
+		"when true, remove disconnected clients from printed stats (default: true)")
+	// Default to true
+	cfg.RemoveDisconnectedFromStats = true
 	flag.Parse()
 
 	if cfg.MinShareDiff == 0 {
@@ -79,6 +83,7 @@ func main() {
 	log.Printf("Mine when not synced:\t%t", cfg.MineWhenNotSynced)
 	log.Printf("Poll id:\t\t\t%d", cfg.Poll)
 	log.Printf("Vote id:\t\t\t%d", cfg.Vote)
+	log.Printf("remove disconnected from stats:\t%t", cfg.RemoveDisconnectedFromStats)
 	log.Println("----------------------------------")
 
 	if err := htnstratum.ListenAndServe(cfg); err != nil {
