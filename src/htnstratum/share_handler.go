@@ -146,6 +146,25 @@ func (sh *shareHandler) getCreateStats(ctx *gostratum.StratumContext) *WorkStats
 	return stats
 }
 
+
+func (sh *shareHandler) removeStats(ctx *gostratum.StratumContext) {
+	sh.statsLock.Lock()
+	defer sh.statsLock.Unlock()
+
+	// Try to remove by workername first (if set), then by remote address.
+	// Delete both keys if present to be safe.
+	if ctx.WorkerName != "" {
+		if _, ok := sh.stats[ctx.WorkerName]; ok {
+			delete(sh.stats, ctx.WorkerName)
+		}
+	}
+	if ctx.RemoteAddr != "" {
+		if _, ok := sh.stats[ctx.RemoteAddr]; ok {
+			delete(sh.stats, ctx.RemoteAddr)
+		}
+	}
+}
+
 func (stats *WorkStats) updateRollingCounters(shareDiff float64, isStale bool, isInvalid bool) {
 	now := time.Now()
 	hourKey := now.Unix() / 3600 // hour timestamp
