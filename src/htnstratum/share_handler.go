@@ -47,16 +47,16 @@ type WorkStats struct {
 }
 
 type shareHandler struct {
-	hoosat       *rpcclient.RPCClient
-	state        *MiningState
-	soloDiff     float64
-	stats        map[string]*WorkStats
-	statsLock    sync.Mutex
-	overall      WorkStats
-	rollingStats bool
-	tipBlueScore uint64
-	submitLock   sync.Mutex
-        invalidateGBTCache func()
+	hoosat             *rpcclient.RPCClient
+	state              *MiningState
+	soloDiff           float64
+	stats              map[string]*WorkStats
+	statsLock          sync.Mutex
+	overall            WorkStats
+	rollingStats       bool
+	tipBlueScore       uint64
+	submitLock         sync.Mutex
+	invalidateGBTCache func()
 }
 
 type BanInfo struct {
@@ -437,9 +437,9 @@ func (sh *shareHandler) submit(ctx *gostratum.StratumContext,
 	}
 	state := GetMiningState(ctx)
 	_, err = sh.hoosat.SubmitBlock(block, submitInfo.powHash.String())
-        if err == nil && sh.invalidateGBTCache != nil {
-	        sh.invalidateGBTCache() // We solved a block - clear the cache
-        }
+	if err == nil && sh.invalidateGBTCache != nil {
+		sh.invalidateGBTCache() // We solved a block - clear the cache
+	}
 	state.RemoveJob(int(submitInfo.jobId))
 	return err
 }
@@ -458,32 +458,34 @@ func (sh *shareHandler) startStatsThread() error {
 		for _, v := range sh.stats {
 			var rate float64
 			var ratioStr string
+			var rollingRatioStr string
 			if sh.rollingStats {
 				rate = GetRollingAverageHashrateGHs(v)
 				validShares, staleShares, invalidShares := GetRollingShares(v)
-				ratioStr = fmt.Sprintf("%d/%d/%d", validShares, staleShares, invalidShares)
-			} else {
-				rate = GetAverageHashrateGHs(v)
-				ratioStr = fmt.Sprintf("%d/%d/%d", v.SharesFound.Load(), v.StaleShares.Load(), v.InvalidShares.Load())
+				rollingRatioStr = fmt.Sprintf("%d/%d/%d", validShares, staleShares, invalidShares)
 			}
+			rate = GetAverageHashrateGHs(v)
+			ratioStr = fmt.Sprintf("%d/%d/%d", v.SharesFound.Load(), v.StaleShares.Load(), v.InvalidShares.Load())
+
 			totalRate += rate
 			rateStr := stringifyHashrate(rate)
-			lines = append(lines, fmt.Sprintf(" %-15s| %14.14s | %14.14s | %12d | %11s",
-				v.WorkerName, rateStr, ratioStr, v.BlocksFound.Load(), time.Since(v.StartTime).Round(time.Second)))
+			lines = append(lines, fmt.Sprintf(" %-15s| %14.14s | %14.14s | %14.14s | %12d | %11s",
+				v.WorkerName, rateStr, rollingRatioStr, ratioStr, v.BlocksFound.Load(), time.Since(v.StartTime).Round(time.Second)))
 		}
 		sort.Strings(lines)
 		str += strings.Join(lines, "\n")
 		rateStr := stringifyHashrate(totalRate)
 		var ratioStr string
+		var rollingRatioStr string
 		if sh.rollingStats {
 			validShares, staleShares, invalidShares := GetRollingShares(&sh.overall)
-			ratioStr = fmt.Sprintf("%d/%d/%d", validShares, staleShares, invalidShares)
-		} else {
-			ratioStr = fmt.Sprintf("%d/%d/%d", sh.overall.SharesFound.Load(), sh.overall.StaleShares.Load(), sh.overall.InvalidShares.Load())
+			rollingRatioStr = fmt.Sprintf("%d/%d/%d", validShares, staleShares, invalidShares)
 		}
+		ratioStr = fmt.Sprintf("%d/%d/%d", sh.overall.SharesFound.Load(), sh.overall.StaleShares.Load(), sh.overall.InvalidShares.Load())
+
 		str += "\n-------------------------------------------------------------------------------\n"
-		str += fmt.Sprintf("                | %14.14s | %14.14s | %12d | %11s",
-			rateStr, ratioStr, sh.overall.BlocksFound.Load(), time.Since(start).Round(time.Second))
+		str += fmt.Sprintf("                | %14.14s | %14.14s | %14.14s | %12d | %11s",
+			rateStr, rollingRatioStr, ratioStr, sh.overall.BlocksFound.Load(), time.Since(start).Round(time.Second))
 		str += "\n-------------------------------------------------------------------------------\n"
 		str += " Est. Network Hashrate: " + stringifyHashrate(DiffToHash(sh.soloDiff)*bps) + "\n"
 		str += " Mining difficulty:     " + fmt.Sprintf("%f", sh.soloDiff)
