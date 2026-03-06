@@ -106,6 +106,18 @@ func ListenAndServe(cfg BridgeConfig) error {
 			return nil
 		}
 
+    // Foztor - create the stats handler here instead of blindly on connect
+	// Moved from onConnet in 6ee4d39a9ffb437fb4230e2e964f208282868e8e
+    handlers[string(gostratum.StratumMethodAuthorize)] =
+            func(ctx *gostratum.StratumContext, event gostratum.JsonRpcEvent) error {
+                    if err := gostratum.HandleAuthorize(ctx, event); err != nil {
+                            return err
+                    }
+                    clientHandler.shareHandler.getCreateStats(ctx)
+                    return nil
+            }
+
+
 	stratumConfig := gostratum.StratumListenerConfig{
 		Port:           cfg.StratumPort,
 		HandlerMap:     handlers,
