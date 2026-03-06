@@ -450,46 +450,58 @@ func (sh *shareHandler) startStatsThread() error {
 		// console formatting is terrible. Good luck whever touches anything
 		time.Sleep(10 * time.Second)
 		sh.statsLock.Lock()
-		str := "\n===============================================================================\n"
-		str += "  worker name   |  avg hashrate  |   acc/stl/inv  |    blocks    |    uptime   \n"
-		str += "-------------------------------------------------------------------------------\n"
+		str := "\n========================================================================================================================\n"
+		str += "  worker name   |       hashrate |    1h hashrate |   24h hashrate |    acc/stl/inv |       blocks |      uptime \n"
+		str += "------------------------------------------------------------------------------------------------------------------------\n"
 		var lines []string
 		totalRate := float64(0)
+		totalOneHourRate := float64(0)
+		totalRollingRate := float64(0)
 		for _, v := range sh.stats {
 			var rate float64
-			var ratioStr string
-			var rollingRatioStr string
-			if sh.rollingStats {
-				rate = GetRollingAverageHashrateGHs(v)
-				validShares, staleShares, invalidShares := GetRollingShares(v)
-				rollingRatioStr = fmt.Sprintf("%d/%d/%d", validShares, staleShares, invalidShares)
-			}
+
 			rate = GetAverageHashrateGHs(v)
-			ratioStr = fmt.Sprintf("%d/%d/%d", v.SharesFound.Load(), v.StaleShares.Load(), v.InvalidShares.Load())
+			var oneHourRate float64
+			oneHourRate = GetOneHourAverageHashrateGHs(v)
+			var ratioStr string
+			var rollingRate float64
+			rollingRate = GetRollingAverageHashrateGHs(v)
+			if sh.rollingStats {
+				validShares, staleShares, invalidShares := GetRollingShares(v)
+				ratioStr = fmt.Sprintf("%d/%d/%d", validShares, staleShares, invalidShares)
+			} else {
+				ratioStr = fmt.Sprintf("%d/%d/%d", v.SharesFound.Load(), v.StaleShares.Load(), v.InvalidShares.Load())
+			}
 
 			totalRate += rate
+			totalOneHourRate += oneHourRate
+			totalRollingRate += rollingRate
 			rateStr := stringifyHashrate(rate)
-			lines = append(lines, fmt.Sprintf(" %-15s| %14.14s | %14.14s | %14.14s | %12d | %11s",
-				v.WorkerName, rateStr, rollingRatioStr, ratioStr, v.BlocksFound.Load(), time.Since(v.StartTime).Round(time.Second)))
+			oneHourRateStr := stringifyHashrate(oneHourRate)
+			rollingRateStr := stringifyHashrate(rollingRate)
+			lines = append(lines, fmt.Sprintf(" %-15s| %14.14s | %14.14s | %14.14s | %14.14s | %12d | %11s",
+				v.WorkerName, rateStr, oneHourRateStr, rollingRateStr, ratioStr, v.BlocksFound.Load(), time.Since(v.StartTime).Round(time.Second)))
 		}
 		sort.Strings(lines)
 		str += strings.Join(lines, "\n")
 		rateStr := stringifyHashrate(totalRate)
+		totalOneHourRateStr := stringifyHashrate(totalOneHourRate)
+		totalRollingRateStr := stringifyHashrate(totalRollingRate)
 		var ratioStr string
-		var rollingRatioStr string
 		if sh.rollingStats {
 			validShares, staleShares, invalidShares := GetRollingShares(&sh.overall)
-			rollingRatioStr = fmt.Sprintf("%d/%d/%d", validShares, staleShares, invalidShares)
+			ratioStr = fmt.Sprintf("%d/%d/%d", validShares, staleShares, invalidShares)
+		} else {
+			ratioStr = fmt.Sprintf("%d/%d/%d", sh.overall.SharesFound.Load(), sh.overall.StaleShares.Load(), sh.overall.InvalidShares.Load())
 		}
-		ratioStr = fmt.Sprintf("%d/%d/%d", sh.overall.SharesFound.Load(), sh.overall.StaleShares.Load(), sh.overall.InvalidShares.Load())
 
-		str += "\n-------------------------------------------------------------------------------\n"
-		str += fmt.Sprintf("                | %14.14s | %14.14s | %14.14s | %12d | %11s",
-			rateStr, rollingRatioStr, ratioStr, sh.overall.BlocksFound.Load(), time.Since(start).Round(time.Second))
-		str += "\n-------------------------------------------------------------------------------\n"
+		str += "\n------------------------------------------------------------------------------------------------------------------------\n"
+		str += fmt.Sprintf("                | %14.14s | %14.14s | %14.14s | %14.14s | %12d | %11s",
+			rateStr, totalOneHourRateStr, totalRollingRateStr, ratioStr, sh.overall.BlocksFound.Load(), time.Since(start).Round(time.Second))
+		str += "\n------------------------------------------------------------------------------------------------------------------------\n"
 		str += " Est. Network Hashrate: " + stringifyHashrate(DiffToHash(sh.soloDiff)*bps) + "\n"
 		str += " Mining difficulty:     " + fmt.Sprintf("%f", sh.soloDiff)
-		str += "\n========================================================== htn_bridge_" + version + " ===\n"
+		str += "\n========================================================================================== htn_bridge_" + version + " ===========\n"
 		sh.statsLock.Unlock()
 		log.Println(str)
 	}
@@ -523,6 +535,21 @@ func GetRollingAverageHashrateGHs(stats *WorkStats) float64 {
 
 	// Average over the number of hours with data
 	return totalDiff / float64(hours*3600) // convert to GH/s per second
+}
+
+func GetOneHourAverageHashrateGHs(stats *WorkStats) float64 {
+	stats.rollingLock.Lock()
+	defer stats.rollingLock.Unlock()
+
+	now := time.Now()
+	hourKey := now.Unix() / 3600
+
+	// Get the difficulty for the current hour
+	if diff, exists := stats.RollingSharesDiff[hourKey]; exists {
+		return diff / 3600.0 // convert to GH/s per second
+	}
+
+	return 0
 }
 
 func GetRollingShares(stats *WorkStats) (valid int64, stale int64, invalid int64) {
