@@ -58,5 +58,6 @@ mine_when_not_synced: false
 gbt_cache_ttl: 190ms
 
 # Should disconnected clients be removed from the console stats
-remove-disconnected-from-stats: true
+remove_disconnected_from_stats: true
+
 
