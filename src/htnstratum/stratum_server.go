@@ -39,6 +39,7 @@ type BridgeConfig struct {
 	// GbtCacheTTL is how long to cache GetBlockTemplate responses per payout address.
 	// A value of 0 (the default) disables caching.
 	GbtCacheTTL time.Duration `yaml:"gbt_cache_ttl"`
+	RemoveDisconnectedFromStats bool `yaml:"remove_disconnected_from_stats"`
 }
 
 func configureZap(cfg BridgeConfig) (*zap.SugaredLogger, func()) {
@@ -95,7 +96,7 @@ func ListenAndServe(cfg BridgeConfig) error {
 		minDiff = 4
 	}
 	extranonceSize := min(cfg.ExtranonceSize, 3)
-	clientHandler := newClientListener(logger, shareHandler, minDiff, int8(extranonceSize))
+	clientHandler := newClientListener(logger, shareHandler, minDiff, int8(extranonceSize), cfg.RemoveDisconnectedFromStats)
 	handlers := gostratum.DefaultHandlers()
 	// override the submit handler with an actual useful handler
 	handlers[string(gostratum.StratumMethodSubmit)] =
