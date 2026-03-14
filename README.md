@@ -3,7 +3,11 @@
 This is a [forked](https://github.com/onemorebsmith/kaspa-stratum-bridge) lightweight daemon that allows mining to a local (or remote) hoosat node using stratum-base miners.
 
 This daemon is confirmed working with the miners below in both dual-mining and hoosat-only modes (for those that support it) and Windows/MacOs/Linux/HiveOs.
-* [srbminer](https://github.com/doktor83/SRBMiner-Multi/releases/tag/2.4.4)
+* hoominer
+* hoo_cpu
+* hoo_gpu
+* hoo_gpu_amd
+* Hoodroid
 
 Huge shoutout to https://github.com/onemorebsmith/kaspa-stratum-bridgev and https://github.com/KaffinPX/KStratum for the work
 Tips appreciated: `kaspa:qp9v6090sr8jjlkq7r3f4h9un5rtfhu3raknfg3cca9eapzee57jzew0kxwlp`
