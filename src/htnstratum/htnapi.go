@@ -37,6 +37,9 @@ type HtnApi struct {
 	// Stats
 	gbtCacheHits   uint64
 	gbtCacheMisses uint64
+	
+    // DO NOT LET GBT RACE!!!
+	nodeCallMu sync.Mutex
 }
 
 func NewHoosatAPI(address string, blockWaitTime time.Duration, logger *zap.SugaredLogger, gbtCacheTTL time.Duration) (*HtnApi, error) {
@@ -243,7 +246,11 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 		atomic.AddUint64(&htnApi.gbtCacheMisses, 1)
 
 		// Cache miss or expired – fetch outside the lock.
+		// BUT STILL STOP RACING!!
+		htnApi.nodeCallMu.Lock()
 		template, err := htnApi.hoosat.GetBlockTemplate(payoutAddress, extraData)
+		htnApi.nodeCallMu.Unlock()
+
 		if err != nil {
 			return nil, errors.Wrap(err, "failed fetching new block template from hoosat")
 		}
@@ -254,7 +261,11 @@ func (htnApi *HtnApi) GetBlockTemplate(client *gostratum.StratumContext, poll in
 	}
 
 	// Cache disabled or poll/vote path.
+	// This has never had a lock, but it needs one to stop cross pollution of GBTs
+	htnApi.nodeCallMu.Lock()
 	template, err := htnApi.hoosat.GetBlockTemplate(payoutAddress, extraData)
+	htnApi.nodeCallMu.Unlock()
+
 	if err != nil {
 		return nil, errors.Wrap(err, "failed fetching new block template from hoosat")
 	}
