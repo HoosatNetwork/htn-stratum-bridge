@@ -170,7 +170,7 @@ func (c *clientListener) NewBlockAvailable(htnApi *HtnApi, soloMining bool, poll
 					state.stratumDiff = newHoosatDiff()
 				}
 				if !soloMining {
-					client.Logger.Info(fmt.Sprintf("changing diff from %.10f to %.10f", currentDiff, varDiff))
+					client.Logger.Debug(fmt.Sprintf("changing diff from %.10f to %.10f", currentDiff, varDiff))
 				}
 				state.stratumDiff.setDiffValue(varDiff)
 				sendClientDiff(client, state)
@@ -197,7 +197,7 @@ func (c *clientListener) NewBlockAvailable(htnApi *HtnApi, soloMining bool, poll
 					return
 				}
 				RecordWorkerError(client.WalletAddr, ErrFailedSendWork)
-				client.Logger.Error(errors.Wrapf(err, "failed sending work packet %d", jobId).Error())
+				client.Logger.Debug(errors.Wrapf(err, "failed sending work packet %d", jobId).Error())
 			}
 
 			RecordNewJob(client)
@@ -231,7 +231,7 @@ func sendClientDiff(client *gostratum.StratumContext, state *MiningState) {
 		Params:  []any{state.stratumDiff.diffValue},
 	}); err != nil {
 		RecordWorkerError(client.WalletAddr, ErrFailedSetDiff)
-		client.Logger.Error(errors.Wrap(err, "failed sending difficulty").Error())
+		client.Logger.Debug(errors.Wrap(err, "failed sending difficulty").Error())
 		return
 	}
 }
