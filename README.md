@@ -8,7 +8,7 @@ This daemon is confirmed working with the miners below
 * [hoo_gpu_amd](https://htn.foztor.net/)
 * [hoo_cpu_arm](https://htn.foztor.net/)
 * [hoodroid](https://hoodroid.htn.foztor.net/)
-* [Hoominer] (https://github.com/HoosatNetwork/hoominer/releases)
+* [hoominer]([https://hoodroid.htn.foztor.net/](https://github.com/HoosatNetwork/hoominer/releases)))
 
 
 Huge shoutout to https://github.com/onemorebsmith/kaspa-stratum-bridgev and https://github.com/KaffinPX/KStratum for the work
