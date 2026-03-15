@@ -1,13 +1,14 @@
-# Hoosat Stratum Adapter
+# Hoosat (HTN) Stratum Bridge
 
 This is a [forked](https://github.com/onemorebsmith/kaspa-stratum-bridge) lightweight daemon that allows mining to a local (or remote) hoosat node using stratum-base miners.
 
-This daemon is confirmed working with the miners below in both dual-mining and hoosat-only modes (for those that support it) and Windows/MacOs/Linux/HiveOs.
-* hoominer
-* hoo_cpu
-* hoo_gpu
-* hoo_gpu_amd
-* Hoodroid
+This daemon is confirmed working with the miners below
+* [hoo_cpu](https://htn.foztor.net/)
+* [hoo_gpu](https://htn.foztor.net/)
+* [hoo_gpu_amd](https://htn.foztor.net/)
+* [hoo_cpu_arm](https://htn.foztor.net/)
+* [hoodroid](https://htn.foztor.net/)
+
 
 Huge shoutout to https://github.com/onemorebsmith/kaspa-stratum-bridgev and https://github.com/KaffinPX/KStratum for the work
 Tips appreciated: `kaspa:qp9v6090sr8jjlkq7r3f4h9un5rtfhu3raknfg3cca9eapzee57jzew0kxwlp`
@@ -92,19 +93,19 @@ Detailed:
 
 ## Manual build
 
-Install go 1.18 using whatever package manager is approprate for your system
+Install go 1.25 (or higher) using whatever package manager is approprate for your system
 
   
 
-run `cd cmd/hoosatbridge;go build .`
+run `cd cmd/htnbridge ;go build .`
 
   
 
-Modify the config file in ./cmd/bridge/config.yaml with your setup, the file comments explain the various flags
+Modify the config file in ./cmd/htnbridge/config.yaml with your setup, the file comments explain the various flags
 
   
 
-run `./hoosatbridge` in the `cmd/hoosatbridge` directory
+run `./htnbridge` in the `cmd/htnbridge` directory
 
   
 
