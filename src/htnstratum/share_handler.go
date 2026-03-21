@@ -15,7 +15,7 @@ import (
 	"github.com/Hoosat-Oy/HTND/domain/consensus/model/externalapi"
 
 	"github.com/Hoosat-Oy/HTND/domain/consensus/utils/consensushashing"
-	"github.com/Hoosat-Oy/HTND/domain/consensus/utils/pow"
+	"github.com/Hoosat-Oy/htn-stratum-bridge/src/pow"
 	"github.com/Hoosat-Oy/HTND/infrastructure/network/rpcclient"
 	"github.com/Hoosat-Oy/htn-stratum-bridge/src/gostratum"
 	"github.com/pkg/errors"
