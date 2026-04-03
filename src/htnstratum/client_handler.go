@@ -230,6 +230,10 @@ func sendClientDiff(client *gostratum.StratumContext, state *MiningState) {
 		Method:  "mining.set_difficulty",
 		Params:  []any{state.stratumDiff.diffValue},
 	}); err != nil {
+		if errors.Is(err, gostratum.ErrorDisconnected) {
+			RecordWorkerError(client.WalletAddr, ErrDisconnected)
+			return
+		}
 		RecordWorkerError(client.WalletAddr, ErrFailedSetDiff)
 		client.Logger.Debug(errors.Wrap(err, "failed sending difficulty").Error())
 		return

@@ -22,7 +22,7 @@ type StratumContext struct {
 	Id            int32
 	Logger        *zap.Logger
 	connection    net.Conn
-	disconnecting bool
+	disconnecting atomic.Bool
 	onDisconnect  chan *StratumContext
 	State         any // gross, but go generics aren't mature enough this can be typed 😭
 	writeLock     int32
@@ -39,7 +39,7 @@ type ContextSummary struct {
 var ErrorDisconnected = fmt.Errorf("disconnecting")
 
 func (sc *StratumContext) Connected() bool {
-	return !sc.disconnecting
+	return !sc.disconnecting.Load()
 }
 
 func (sc *StratumContext) Summary() ContextSummary {
@@ -71,7 +71,7 @@ func (sc *StratumContext) String() string {
 }
 
 func (sc *StratumContext) Reply(response JsonRpcResponse) error {
-	if sc.disconnecting {
+	if sc.disconnecting.Load() {
 		return ErrorDisconnected
 	}
 	encoded, err := json.Marshal(response)
@@ -83,7 +83,7 @@ func (sc *StratumContext) Reply(response JsonRpcResponse) error {
 }
 
 func (sc *StratumContext) Send(event JsonRpcEvent) error {
-	if sc.disconnecting {
+	if sc.disconnecting.Load() {
 		return ErrorDisconnected
 	}
 	encoded, err := json.Marshal(event)
@@ -186,13 +186,14 @@ func (sc *StratumContext) ReplyLowDiffShare(id any) error {
 }
 
 func (sc *StratumContext) Disconnect() {
-	if !sc.disconnecting {
+	if sc.disconnecting.CompareAndSwap(false, true) {
 		sc.Logger.Info("disconnecting")
-		sc.disconnecting = true
 		if sc.connection != nil {
 			sc.connection.Close()
 		}
-		sc.onDisconnect <- sc
+		if sc.onDisconnect != nil {
+			sc.onDisconnect <- sc
+		}
 	}
 }
 

@@ -3,6 +3,7 @@ package gostratum
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -97,5 +98,41 @@ func TestWalletValidation(t *testing.T) {
 		if cleaned != v.expected {
 			t.Fatalf("expected %s, got %s", v.expected, cleaned)
 		}
+	}
+}
+
+func TestSendReturnsDisconnectedAfterDisconnect(t *testing.T) {
+	logger := testLogger()
+	ctx, _ := NewMockContext(context.Background(), logger, nil)
+
+	ctx.Disconnect()
+
+	err := ctx.Send(JsonRpcEvent{
+		Version: "2.0",
+		Method:  "mining.set_difficulty",
+		Params:  []any{1.0},
+	})
+	if !errors.Is(err, ErrorDisconnected) {
+		t.Fatalf("expected ErrorDisconnected, got %v", err)
+	}
+	if ctx.Connected() {
+		t.Fatal("expected disconnected context")
+	}
+}
+
+func TestDisconnectIsIdempotent(t *testing.T) {
+	ctx := &StratumContext{
+		Logger:       testLogger(),
+		onDisconnect: make(chan *StratumContext, 2),
+	}
+
+	ctx.Disconnect()
+	ctx.Disconnect()
+
+	if got := len(ctx.onDisconnect); got != 1 {
+		t.Fatalf("expected one disconnect notification, got %d", got)
+	}
+	if ctx.Connected() {
+		t.Fatal("expected disconnected context")
 	}
 }
