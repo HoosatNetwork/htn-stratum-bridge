@@ -481,7 +481,7 @@ func (sh *shareHandler) startStatsThread() error {
 
 			rate = GetAverageHashrateGHs(v)
 			var oneHourRate float64
-			oneHourRate = GetOneHourAverageHashrateGHs(v)
+			oneHourRate = AverageHashrateGHs(v)
 			var ratioStr string
 			var rollingRate float64
 			rollingRate = GetRollingAverageHashrateGHs(v)
@@ -565,7 +565,12 @@ func GetOneHourAverageHashrateGHs(stats *WorkStats) float64 {
 
 	// Get the difficulty for the current hour
 	if diff, exists := stats.RollingSharesDiff[hourKey]; exists {
-		return diff / 3600.0 // convert to GH/s per second
+		// Calculate seconds elapsed into the current hour
+		secondsIntoHour := now.Unix() % 3600
+		if secondsIntoHour == 0 {
+			secondsIntoHour = 1 // Avoid division by zero ...
+		}
+		return diff / float64(secondsIntoHour) // convert to GH/s per second
 	}
 
 	return 0
