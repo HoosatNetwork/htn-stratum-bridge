@@ -167,22 +167,22 @@ func (sh *shareHandler) removeStats(ctx *gostratum.StratumContext) {
 
 func (stats *WorkStats) updateRollingCounters(shareDiff float64, isStale bool, isInvalid bool) {
 	now := time.Now()
-	hourKey := now.Unix() / 3600 // hour timestamp
+	minuteKey := now.Unix() / 60 // minute timestamp
 
 	stats.rollingLock.Lock()
 	defer stats.rollingLock.Unlock()
 
 	if !isStale && !isInvalid {
-		stats.RollingShares[hourKey]++
-		stats.RollingSharesDiff[hourKey] += shareDiff
+		stats.RollingShares[minuteKey]++
+		stats.RollingSharesDiff[minuteKey] += shareDiff
 	} else if isStale {
-		stats.RollingStaleShares[hourKey]++
+		stats.RollingStaleShares[minuteKey]++
 	} else if isInvalid {
-		stats.RollingInvalidShares[hourKey]++
+		stats.RollingInvalidShares[minuteKey]++
 	}
 
-	// Clean up old entries (older than 24 hours)
-	cutoff := hourKey - 24
+	// Clean up old entries (older than 24 hours, i.e., 1440 minutes)
+	cutoff := minuteKey - 1440
 	for k := range stats.RollingShares {
 		if k < cutoff {
 			delete(stats.RollingShares, k)
@@ -481,7 +481,7 @@ func (sh *shareHandler) startStatsThread() error {
 
 			rate = GetAverageHashrateGHs(v)
 			var oneHourRate float64
-			oneHourRate = AverageHashrateGHs(v)
+			oneHourRate = GetOneHourAverageHashrateGHs(v)
 			var ratioStr string
 			var rollingRate float64
 			rollingRate = GetRollingAverageHashrateGHs(v)
@@ -535,25 +535,23 @@ func GetRollingAverageHashrateGHs(stats *WorkStats) float64 {
 	defer stats.rollingLock.Unlock()
 
 	now := time.Now()
-	hourKey := now.Unix() / 3600
+	minuteKey := now.Unix() / 60
 	totalDiff := float64(0)
-	hours := 0
 
-	// Sum up the last 24 hours
-	for i := range int64(24) {
-		key := hourKey - i
+	// Sum up the last 1440 minutes (24 hours)
+	for i := 0; i < 1440; i++ {
+		key := minuteKey - int64(i)
 		if diff, exists := stats.RollingSharesDiff[key]; exists {
 			totalDiff += diff
-			hours++
 		}
 	}
 
-	if hours == 0 {
+	if totalDiff == 0 {
 		return 0
 	}
 
-	// Average over the number of hours with data
-	return totalDiff / float64(hours*3600) // convert to GH/s per second
+	// Average over 86400 seconds (24 hours)
+	return totalDiff / 86400
 }
 
 func GetOneHourAverageHashrateGHs(stats *WorkStats) float64 {
@@ -561,19 +559,19 @@ func GetOneHourAverageHashrateGHs(stats *WorkStats) float64 {
 	defer stats.rollingLock.Unlock()
 
 	now := time.Now()
-	hourKey := now.Unix() / 3600
+	minuteKey := now.Unix() / 60
+	totalDiff := float64(0)
 
-	// Get the difficulty for the current hour
-	if diff, exists := stats.RollingSharesDiff[hourKey]; exists {
-		// Calculate seconds elapsed into the current hour
-		secondsIntoHour := now.Unix() % 3600
-		if secondsIntoHour == 0 {
-			secondsIntoHour = 1 // Avoid division by zero ...
+	// Sum up the last 60 minutes
+	for i := 0; i < 60; i++ {
+		key := minuteKey - int64(i)
+		if diff, exists := stats.RollingSharesDiff[key]; exists {
+			totalDiff += diff
 		}
-		return diff / float64(secondsIntoHour) // convert to GH/s per second
 	}
 
-	return 0
+	// Average over 3600 seconds
+	return totalDiff / 3600
 }
 
 func GetRollingShares(stats *WorkStats) (valid int64, stale int64, invalid int64) {
@@ -581,11 +579,11 @@ func GetRollingShares(stats *WorkStats) (valid int64, stale int64, invalid int64
 	defer stats.rollingLock.Unlock()
 
 	now := time.Now()
-	hourKey := now.Unix() / 3600
+	minuteKey := now.Unix() / 60
 
-	// Sum up the last 24 hours
-	for i := range int64(24) {
-		key := hourKey - i
+	// Sum up the last 1440 minutes (24 hours)
+	for i := 0; i < 1440; i++ {
+		key := minuteKey - int64(i)
 		if shares, exists := stats.RollingShares[key]; exists {
 			valid += shares
 		}
