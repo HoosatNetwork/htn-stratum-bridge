@@ -163,7 +163,6 @@ func (htnApi *HtnApi) waitForSync(verbose bool) error {
 func (htnApi *HtnApi) startBlockTemplateListener(ctx context.Context, blockReadyCb func()) {
 	blockReadyChan := make(chan bool)
 	err := htnApi.hoosat.RegisterForNewBlockTemplateNotifications(func(_ *appmessage.NewBlockTemplateNotificationMessage) {
-		// htnApi.invalidateGBTCache() // Happens far too often, and not just for new Tips.  Instead rely on 100ms TTL
 		blockReadyChan <- true
 	})
 	if err != nil {
@@ -184,6 +183,7 @@ func (htnApi *HtnApi) startBlockTemplateListener(ctx context.Context, blockReady
 			htnApi.logger.Warn("context cancelled, stopping block update listener")
 			return
 		case <-blockReadyChan:
+			htnApi.invalidateGBTCache() // This is the right place do to this 
 			blockReadyCb()
 			ticker.Reset(htnApi.blockWaitTime)
 		case <-ticker.C: // timeout, manually check for new blocks
