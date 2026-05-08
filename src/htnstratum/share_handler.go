@@ -57,6 +57,7 @@ type shareHandler struct {
 	tipBlueScore       uint64
 	submitLock         sync.Mutex
 	invalidateGBTCache func()
+	onBlockSolved      func()
 }
 
 type BanInfo struct {
@@ -459,6 +460,11 @@ func (sh *shareHandler) submit(ctx *gostratum.StratumContext,
 	if err == nil && sh.invalidateGBTCache != nil {
 		sh.invalidateGBTCache() // We solved a block - clear the cache
 	}
+
+       	if err == nil && sh.onBlockSolved != nil {
+		go sh.onBlockSolved() // Immediately push new jobs to miners without waiting for node notification
+	}
+
 	state.RemoveJob(int(submitInfo.jobId))
 	return err
 }
