@@ -57,6 +57,7 @@ type shareHandler struct {
 	tipBlueScore       uint64
 	submitLock         sync.Mutex
 	invalidateGBTCache func()
+	onBlockSolved      func()
 	mineWhenNotSynced  bool
 }
 

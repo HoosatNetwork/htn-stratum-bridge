@@ -97,8 +97,8 @@ func ListenAndServe(cfg BridgeConfig) error {
 	}
 	extranonceSize := min(cfg.ExtranonceSize, 3)
 	clientHandler := newClientListener(logger, shareHandler, minDiff, int8(extranonceSize), cfg.RemoveDisconnectedFromStats)
-        shareHandler.onBlockSolved = func() {
-		clientHandler.NewBlockAvailable(htnApi, cfg.SoloMining, cfg.Poll, cfg.Vote)
+	shareHandler.onBlockSolved = func() {
+		clientHandler.NewBlockAvailable(htnApi, cfg.SoloMining, cfg.Poll, cfg.Vote, cfg.MineWhenNotSynced)
 	}
 	handlers := gostratum.DefaultHandlers()
 	// override the submit handler with an actual useful handler
