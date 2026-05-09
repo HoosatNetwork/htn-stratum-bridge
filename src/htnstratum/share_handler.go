@@ -15,9 +15,9 @@ import (
 	"github.com/Hoosat-Oy/HTND/domain/consensus/model/externalapi"
 
 	"github.com/Hoosat-Oy/HTND/domain/consensus/utils/consensushashing"
-	"github.com/Hoosat-Oy/htn-stratum-bridge/src/pow"
 	"github.com/Hoosat-Oy/HTND/infrastructure/network/rpcclient"
 	"github.com/Hoosat-Oy/htn-stratum-bridge/src/gostratum"
+	"github.com/Hoosat-Oy/htn-stratum-bridge/src/pow"
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
@@ -57,7 +57,7 @@ type shareHandler struct {
 	tipBlueScore       uint64
 	submitLock         sync.Mutex
 	invalidateGBTCache func()
-	onBlockSolved      func()
+	mineWhenNotSynced  bool
 }
 
 type BanInfo struct {
@@ -92,7 +92,7 @@ func TryToBan(address string) {
 	bans = append(bans, BanInfo{Address: address, Times: 1})
 }
 
-func newShareHandler(hoosat *rpcclient.RPCClient, rollingStats bool, invalidateGBTCache func()) *shareHandler {
+func newShareHandler(hoosat *rpcclient.RPCClient, rollingStats bool, invalidateGBTCache func(), mineWhenNotSynced bool) *shareHandler {
 	return &shareHandler{
 		hoosat: hoosat,
 		stats:  map[string]*WorkStats{},
@@ -105,6 +105,7 @@ func newShareHandler(hoosat *rpcclient.RPCClient, rollingStats bool, invalidateG
 		rollingStats:       rollingStats,
 		statsLock:          sync.Mutex{},
 		invalidateGBTCache: invalidateGBTCache,
+		mineWhenNotSynced:  mineWhenNotSynced,
 	}
 }
 
@@ -146,7 +147,6 @@ func (sh *shareHandler) getCreateStats(ctx *gostratum.StratumContext) *WorkStats
 	sh.statsLock.Unlock()
 	return stats
 }
-
 
 func (sh *shareHandler) removeStats(ctx *gostratum.StratumContext) {
 	sh.statsLock.Lock()
@@ -438,15 +438,16 @@ func (sh *shareHandler) HandleSubmit(ctx *gostratum.StratumContext, event gostra
 }
 
 func (sh *shareHandler) submit(ctx *gostratum.StratumContext,
-	block *externalapi.DomainBlock, submitInfo *submitInfo, eventId any) error {
+	block *externalapi.DomainBlock, submitInfo *submitInfo, _ any) error {
 	sh.submitLock.Lock()
 	defer sh.submitLock.Unlock()
-	// Refuse to submit blocks when the node is not synced.
+	// Optionally refuse to submit blocks when the node is not synced.
+	// When mine_when_not_synced is true, we still attempt submission (the node
+	// will ultimately accept/reject based on its own view of the DAG).
 	info, err := sh.hoosat.GetInfo()
 	if err != nil {
-		info.IsSynced = false
-	}
-	if !info.IsSynced {
+		ctx.Logger.Warn("failed to fetch node sync state before submit; attempting submit anyway", zap.Error(err))
+	} else if !info.IsSynced && !sh.mineWhenNotSynced {
 		return errors.New("node is not synced; refusing to submit block")
 	}
 	mutable := block.Header.ToMutable()
@@ -461,7 +462,7 @@ func (sh *shareHandler) submit(ctx *gostratum.StratumContext,
 		sh.invalidateGBTCache() // We solved a block - clear the cache
 	}
 
-       	if err == nil && sh.onBlockSolved != nil {
+	if err == nil && sh.onBlockSolved != nil {
 		go sh.onBlockSolved() // Immediately push new jobs to miners without waiting for node notification
 	}
 

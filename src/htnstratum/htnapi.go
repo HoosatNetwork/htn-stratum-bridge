@@ -29,6 +29,10 @@ type HtnApi struct {
 	hoosat        *rpcclient.RPCClient
 	connected     bool
 
+	// synced tracks the latest observed node sync status from GetInfo().
+	// It is updated periodically by the block template listener.
+	synced atomic.Bool
+
 	// GBT response cache (per payout address)
 	gbtCache    map[string]*gbtCacheEntry
 	gbtCacheTTL time.Duration
@@ -37,8 +41,8 @@ type HtnApi struct {
 	// Stats
 	gbtCacheHits   uint64
 	gbtCacheMisses uint64
-	
-    // DO NOT LET GBT RACE!!!
+
+	// DO NOT LET GBT RACE!!!
 	nodeCallMu sync.Mutex
 }
 
@@ -61,11 +65,27 @@ func NewHoosatAPI(address string, blockWaitTime time.Duration, logger *zap.Sugar
 
 func (htnApi *HtnApi) Start(ctx context.Context, cfg BridgeConfig, blockCb func()) {
 	if !cfg.MineWhenNotSynced {
-		htnApi.waitForSync(true)
+		if err := htnApi.waitForSync(ctx, true); err != nil {
+			htnApi.logger.Warn("sync wait interrupted; bridge may not produce work", zap.Error(err))
+			return
+		}
 	}
-	go htnApi.startBlockTemplateListener(ctx, blockCb)
+	go htnApi.startBlockTemplateListener(ctx, cfg.MineWhenNotSynced, blockCb)
 	go htnApi.startStatsThread(ctx)
 	go htnApi.startCacheCleanupThread(ctx)
+}
+
+func (htnApi *HtnApi) IsSynced() bool {
+	return htnApi.synced.Load()
+}
+
+func (htnApi *HtnApi) checkSyncState() (bool, error) {
+	clientInfo, err := htnApi.hoosat.GetInfo()
+	if err != nil {
+		return false, err
+	}
+	htnApi.synced.Store(clientInfo.IsSynced)
+	return clientInfo.IsSynced, nil
 }
 
 func (htnApi *HtnApi) startStatsThread(ctx context.Context) {
@@ -141,53 +161,107 @@ func (htnApi *HtnApi) reconnect() error {
 	return nil
 }
 
-func (htnApi *HtnApi) waitForSync(verbose bool) error {
+func (htnApi *HtnApi) waitForSync(ctx context.Context, verbose bool) error {
 	if verbose {
 		htnApi.logger.Info("checking hoosat sync state")
 	}
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
 	for {
-		clientInfo, err := htnApi.hoosat.GetInfo()
-		synced := err == nil && clientInfo.IsSynced
-		if synced {
-			break
+		synced, err := htnApi.checkSyncState()
+		if err == nil && synced {
+			if verbose {
+				htnApi.logger.Info("HTN synced, starting server")
+			}
+			return nil
 		}
-		htnApi.logger.Warn("HTN is not synced, waiting for sync before starting bridge")
-		time.Sleep(5 * time.Second)
+		if err != nil {
+			htnApi.logger.Warn("failed to check HTN sync state", zap.Error(err))
+			if err := htnApi.reconnect(); err != nil {
+				htnApi.logger.Warn("failed to reconnect to hoosat", zap.Error(err))
+			}
+		} else {
+			htnApi.logger.Warn("HTN is not synced, waiting for sync before starting bridge")
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
 	}
-	if verbose {
-		htnApi.logger.Info("HTN synced, starting server")
-	}
-	return nil
 }
 
-func (htnApi *HtnApi) startBlockTemplateListener(ctx context.Context, blockReadyCb func()) {
-	blockReadyChan := make(chan bool)
+func (htnApi *HtnApi) startBlockTemplateListener(ctx context.Context, mineWhenNotSynced bool, blockReadyCb func()) {
+	// Buffer + non-blocking send so notification callbacks never deadlock
+	// when the listener is temporarily paused.
+	blockReadyChan := make(chan struct{}, 1)
 	err := htnApi.hoosat.RegisterForNewBlockTemplateNotifications(func(_ *appmessage.NewBlockTemplateNotificationMessage) {
-		blockReadyChan <- true
+		select {
+		case blockReadyChan <- struct{}{}:
+		default:
+		}
 	})
 	if err != nil {
 		htnApi.logger.Error("fatal: failed to register for block notifications from hoosat")
 	}
 
-	ticker := time.NewTicker(htnApi.blockWaitTime)
-	for {
-		if err := htnApi.waitForSync(false); err != nil {
-			htnApi.logger.Error("error checking hoosat sync state, attempting reconnect: ", err)
-			if err := htnApi.reconnect(); err != nil {
-				htnApi.logger.Error("error reconnecting to hoosat, waiting before retry: ", err)
-				time.Sleep(15 * time.Second)
-			}
+	blockTicker := time.NewTicker(htnApi.blockWaitTime)
+	defer blockTicker.Stop()
+	syncTicker := time.NewTicker(5 * time.Second)
+	defer syncTicker.Stop()
+
+	// Prime sync state.
+	if _, err := htnApi.checkSyncState(); err != nil {
+		htnApi.logger.Warn("initial sync check failed", zap.Error(err))
+		if err := htnApi.reconnect(); err != nil {
+			htnApi.logger.Warn("initial reconnect failed", zap.Error(err))
 		}
+	}
+	prevSynced := htnApi.IsSynced()
+	lastNotSyncedLog := time.Now().Add(-time.Hour)
+
+	for {
 		select {
 		case <-ctx.Done():
 			htnApi.logger.Warn("context cancelled, stopping block update listener")
 			return
+		case <-syncTicker.C:
+			synced, err := htnApi.checkSyncState()
+			if err != nil {
+				htnApi.logger.Warn("error checking hoosat sync state, attempting reconnect", zap.Error(err))
+				if err := htnApi.reconnect(); err != nil {
+					htnApi.logger.Warn("error reconnecting to hoosat", zap.Error(err))
+				}
+				continue
+			}
+			if synced && !prevSynced && !mineWhenNotSynced {
+				// Node just became synced; nudge a fresh job out immediately.
+				blockReadyCb()
+				blockTicker.Reset(htnApi.blockWaitTime)
+			}
+			prevSynced = synced
 		case <-blockReadyChan:
-			htnApi.invalidateGBTCache() // This is the right place do to this 
-			blockReadyCb()
-			ticker.Reset(htnApi.blockWaitTime)
-		case <-ticker.C: // timeout, manually check for new blocks
-			blockReadyCb()
+			if mineWhenNotSynced || htnApi.IsSynced() {
+				blockReadyCb()
+				blockTicker.Reset(htnApi.blockWaitTime)
+				continue
+			}
+			if time.Since(lastNotSyncedLog) > 30*time.Second {
+				htnApi.logger.Warn("HTN is not synced; mining is paused (set mine_when_not_synced: true to override)")
+				lastNotSyncedLog = time.Now()
+			}
+		case <-blockTicker.C: // timeout, manually check for new blocks
+			if mineWhenNotSynced || htnApi.IsSynced() {
+				blockReadyCb()
+				continue
+			}
+			if time.Since(lastNotSyncedLog) > 30*time.Second {
+				htnApi.logger.Warn("HTN is not synced; mining is paused (set mine_when_not_synced: true to override)")
+				lastNotSyncedLog = time.Now()
+			}
 		}
 	}
 }

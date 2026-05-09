@@ -38,8 +38,8 @@ type BridgeConfig struct {
 
 	// GbtCacheTTL is how long to cache GetBlockTemplate responses per payout address.
 	// A value of 0 (the default) disables caching.
-	GbtCacheTTL time.Duration `yaml:"gbt_cache_ttl"`
-	RemoveDisconnectedFromStats bool `yaml:"remove_disconnected_from_stats"`
+	GbtCacheTTL                 time.Duration `yaml:"gbt_cache_ttl"`
+	RemoveDisconnectedFromStats bool          `yaml:"remove_disconnected_from_stats"`
 }
 
 func configureZap(cfg BridgeConfig) (*zap.SugaredLogger, func()) {
@@ -73,8 +73,8 @@ func ListenAndServe(cfg BridgeConfig) error {
 		StartPromServer(logger, cfg.PromPort)
 	}
 
-        blockWaitTime := max(cfg.BlockWaitTime, minBlockWaitTime)
-        htnApi, err := NewHoosatAPI(cfg.RPCServer, blockWaitTime, logger, cfg.GbtCacheTTL)
+	blockWaitTime := max(cfg.BlockWaitTime, minBlockWaitTime)
+	htnApi, err := NewHoosatAPI(cfg.RPCServer, blockWaitTime, logger, cfg.GbtCacheTTL)
 	if err != nil {
 		return err
 	}
@@ -90,7 +90,7 @@ func ListenAndServe(cfg BridgeConfig) error {
 		go http.ListenAndServe(cfg.HealthCheckPort, nil)
 	}
 
-	shareHandler := newShareHandler(htnApi.hoosat, cfg.RollingStats,htnApi.invalidateGBTCache)
+	shareHandler := newShareHandler(htnApi.hoosat, cfg.RollingStats, htnApi.invalidateGBTCache, cfg.MineWhenNotSynced)
 	minDiff := cfg.MinShareDiff
 	if minDiff == 0 {
 		minDiff = 4
@@ -110,17 +110,16 @@ func ListenAndServe(cfg BridgeConfig) error {
 			return nil
 		}
 
-    // Foztor - create the stats handler here instead of blindly on connect
+	// Foztor - create the stats handler here instead of blindly on connect
 	// Moved from onConnet in 6ee4d39a9ffb437fb4230e2e964f208282868e8e
-    handlers[string(gostratum.StratumMethodAuthorize)] =
-            func(ctx *gostratum.StratumContext, event gostratum.JsonRpcEvent) error {
-                    if err := gostratum.HandleAuthorize(ctx, event); err != nil {
-                            return err
-                    }
-                    clientHandler.shareHandler.getCreateStats(ctx)
-                    return nil
-            }
-
+	handlers[string(gostratum.StratumMethodAuthorize)] =
+		func(ctx *gostratum.StratumContext, event gostratum.JsonRpcEvent) error {
+			if err := gostratum.HandleAuthorize(ctx, event); err != nil {
+				return err
+			}
+			clientHandler.shareHandler.getCreateStats(ctx)
+			return nil
+		}
 
 	stratumConfig := gostratum.StratumListenerConfig{
 		Port:           cfg.StratumPort,
@@ -133,7 +132,7 @@ func ListenAndServe(cfg BridgeConfig) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	htnApi.Start(ctx, cfg, func() {
-		clientHandler.NewBlockAvailable(htnApi, cfg.SoloMining, cfg.Poll, cfg.Vote)
+		clientHandler.NewBlockAvailable(htnApi, cfg.SoloMining, cfg.Poll, cfg.Vote, cfg.MineWhenNotSynced)
 	})
 
 	if cfg.VarDiff || cfg.SoloMining {
