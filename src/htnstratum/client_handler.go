@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Hoosat-Oy/htn-stratum-bridge/src/gostratum"
+	"github.com/HoosatNetwork/htn-stratum-bridge/src/gostratum"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 )

@@ -11,7 +11,7 @@ import (
 
 	"lukechampine.com/blake3"
 
-	"github.com/Hoosat-Oy/HTND/app/appmessage"
+	"github.com/HoosatNetwork/HTND/app/appmessage"
 )
 
 // static value definitions to avoid overhead in diff translations

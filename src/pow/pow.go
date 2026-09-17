@@ -1,17 +1,17 @@
 //go:build !linux || !arm64
-// +build !linux !arm64
 
 package pow
 
 import (
-	"github.com/Hoosat-Oy/HTND/domain/consensus/model/externalapi"
-	"github.com/Hoosat-Oy/HTND/domain/consensus/utils/consensushashing"
-	"github.com/Hoosat-Oy/HTND/domain/consensus/utils/constants"
-	"github.com/Hoosat-Oy/HTND/domain/consensus/utils/hashes"
-	"github.com/Hoosat-Oy/HTND/domain/consensus/utils/serialization"
-	"github.com/Hoosat-Oy/HTND/util/difficulty"
-
 	"math/big"
+	"sync/atomic"
+
+	"github.com/HoosatNetwork/HTND/domain/consensus/model/externalapi"
+	"github.com/HoosatNetwork/HTND/domain/consensus/utils/consensushashing"
+	"github.com/HoosatNetwork/HTND/domain/consensus/utils/constants"
+	"github.com/HoosatNetwork/HTND/domain/consensus/utils/hashes"
+	"github.com/HoosatNetwork/HTND/domain/consensus/utils/serialization"
+	"github.com/HoosatNetwork/HTND/util/difficulty"
 
 	"github.com/pkg/errors"
 )
@@ -27,10 +27,16 @@ type State struct {
 	BlockVersion uint16
 }
 
-var UseHoohashCLibrary bool
+var useHoohashCLibrary atomic.Bool
 
+// UseHoohashCLibrary returns whether the Hoohash C library is being used
+func UseHoohashCLibrary() bool {
+	return useHoohashCLibrary.Load()
+}
+
+// SetUseHoohashCLibrary sets whether to use the Hoohash C library
 func SetUseHoohashCLibrary(use bool) {
-	UseHoohashCLibrary = false // Not available on not aarch64 linux
+	useHoohashCLibrary.Store(false) // Not available on not aarch64 linux
 	_ = use
 }
 
@@ -42,7 +48,7 @@ func NewState(header externalapi.MutableBlockHeader) *State {
 	timestamp, nonce := header.TimeInMilliseconds(), header.Nonce()
 	header.SetTimeInMilliseconds(0)
 	header.SetNonce(0)
-	prevHeader := consensushashing.HeaderHash(header)
+	prevHeader := consensushashing.HeaderHash(header.ToImmutable())
 	header.SetTimeInMilliseconds(timestamp)
 	header.SetNonce(nonce)
 	if header.Version() == 1 {
@@ -91,7 +97,6 @@ func NewState(header externalapi.MutableBlockHeader) *State {
 			BlockVersion: header.Version(),
 		}
 	}
-
 }
 
 func (state *State) CalculateProofOfWorkValue() (*big.Int, *externalapi.DomainHash) {
@@ -192,31 +197,32 @@ func (state *State) IncrementNonce() {
 
 // CheckProofOfWork check's if the block has a valid PoW according to the provided target
 // it does not check if the difficulty itself is valid or less than the maximum for the appropriate network
-func (state *State) CheckProofOfWork(block *externalapi.DomainBlock, powSkip bool) bool {
+func (state *State) CheckProofOfWork(block *externalapi.DomainBlock, powSkip bool) (bool, *big.Int) {
 	powNum, _ := state.CalculateProofOfWorkValue()
 	if state.BlockVersion < constants.PoWIntegrityMinVersion {
-		return powNum.Cmp(&state.Target) <= 0
+		return powNum.Cmp(&state.Target) <= 0, powNum
 	} else if powSkip && state.BlockVersion >= constants.PoWIntegrityMinVersion {
-		return powNum.Cmp(&state.Target) <= 0
+		return powNum.Cmp(&state.Target) <= 0, powNum
 	} else if state.BlockVersion >= constants.PoWIntegrityMinVersion {
 		powHash, err := externalapi.NewDomainHashFromString(block.PoWHash)
 		if err != nil {
-			return false
+			return false, powNum
 		}
 		if !powHash.Equal(new(externalapi.DomainHash)) {
 			submittedPowNum := toBig(powHash)
 			if submittedPowNum.Cmp(powNum) == 0 {
-				return powNum.Cmp(&state.Target) <= 0
+				return powNum.Cmp(&state.Target) <= 0, powNum
 			}
 		}
 	}
-	return false
+	return false, powNum
 }
 
 // CheckProofOfWorkByBits check's if the block has a valid PoW according to its Bits field
 // it does not check if the difficulty itself is valid or less than the maximum for the appropriate network
 func CheckProofOfWorkByBits(header externalapi.MutableBlockHeader, block *externalapi.DomainBlock, powSkip bool) bool {
-	return NewState(header).CheckProofOfWork(block, powSkip)
+	valid, _ := NewState(header).CheckProofOfWork(block, powSkip)
+	return valid
 }
 
 // ToBig converts a externalapi.DomainHash into a big.Int treated as a little endian string.
@@ -244,4 +250,11 @@ func BlockLevel(header externalapi.BlockHeader, maxBlockLevel int) int {
 		// If the block has a level lower than genesis make it zero.
 		maxBlockLevel-proofOfWorkValue.BitLen(), 0)
 	return level
+}
+
+func BlockLevelFromValue(powNum *big.Int, maxBlockLevel int) int {
+	if powNum == nil {
+		return maxBlockLevel
+	}
+	return max(maxBlockLevel-powNum.BitLen(), 0)
 }

@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/Hoosat-Oy/htn-stratum-bridge/src/gostratum"
+	"github.com/HoosatNetwork/htn-stratum-bridge/src/gostratum"
 	"github.com/mattn/go-colorable"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"

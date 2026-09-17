@@ -24,7 +24,7 @@
                 "url": "YOUR_HTND_NODE_IP_HERE:13110",
                 "miner": "htn_bridge",
                 "template": "doesnt.matter",
-                "install_url": "https://github.com/Hoosat-Oy/HTND-stratum-bridge/releases/download/v0.13.4/htn_bridge-0.13.4_hive.tar.gz"
+                "install_url": "https://github.com/HoosatNetwork/HTND-stratum-bridge/releases/download/v0.13.4/htn_bridge-0.13.4_hive.tar.gz"
             },
             "pool_geo": []
         }

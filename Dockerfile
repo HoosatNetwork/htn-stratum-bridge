@@ -2,7 +2,7 @@ FROM golang:1.26.0 AS build
 
 LABEL org.opencontainers.image.description="Dockerized Hoosat Stratum Bridge"
 LABEL org.opencontainers.image.authors="onemorebsmith,hoosat"
-LABEL org.opencontainers.image.source="https://github.com/Hoosat-Oy/htn-stratum-bridge"
+LABEL org.opencontainers.image.source="https://github.com/HoosatNetwork/htn-stratum-bridge"
 
 # Install dependencies
 RUN apt-get update && apt-get install -y curl git openssh-client binutils gcc musl-dev

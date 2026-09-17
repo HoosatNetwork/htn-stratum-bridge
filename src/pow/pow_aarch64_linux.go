@@ -1,5 +1,4 @@
 //go:build linux && arm64 && cgo
-// +build linux,arm64,cgo
 
 package pow
 
@@ -16,21 +15,27 @@ import "C"
 import (
 	//  "fmt"
 	"math/big"
+	"sync/atomic"
 	"unsafe"
 
-	"github.com/Hoosat-Oy/HTND/domain/consensus/model/externalapi"
-	"github.com/Hoosat-Oy/HTND/domain/consensus/utils/consensushashing"
-	"github.com/Hoosat-Oy/HTND/domain/consensus/utils/constants"
-	"github.com/Hoosat-Oy/HTND/domain/consensus/utils/hashes"
-	"github.com/Hoosat-Oy/HTND/domain/consensus/utils/serialization"
-	"github.com/Hoosat-Oy/HTND/util/difficulty"
+	"github.com/HoosatNetwork/HTND/domain/consensus/model/externalapi"
+	"github.com/HoosatNetwork/HTND/domain/consensus/utils/consensushashing"
+	"github.com/HoosatNetwork/HTND/domain/consensus/utils/constants"
+	"github.com/HoosatNetwork/HTND/domain/consensus/utils/hashes"
+	"github.com/HoosatNetwork/HTND/domain/consensus/utils/serialization"
+	"github.com/HoosatNetwork/HTND/util/difficulty"
 )
 
-var UseHoohashCLibrary bool
+var useHoohashCLibrary atomic.Bool
 
+// UseHoohashCLibrary returns whether the Hoohash C library is being used
+func UseHoohashCLibrary() bool {
+	return useHoohashCLibrary.Load()
+}
+
+// SetUseHoohashCLibrary sets whether to use the Hoohash C library
 func SetUseHoohashCLibrary(use bool) {
-	UseHoohashCLibrary = true // Not valid to use native golang on aarch64 as non deteterministic to X64
-	_ = use // Keep compiler happy
+	useHoohashCLibrary.Store(use)
 }
 
 type State struct {
@@ -50,7 +55,7 @@ func NewState(header externalapi.MutableBlockHeader) *State {
 	timestamp, nonce := header.TimeInMilliseconds(), header.Nonce()
 	header.SetTimeInMilliseconds(0)
 	header.SetNonce(0)
-	prevHeader := consensushashing.HeaderHash(header)
+	prevHeader := consensushashing.HeaderHash(header.ToImmutable())
 	header.SetTimeInMilliseconds(timestamp)
 	header.SetNonce(nonce)
 
@@ -67,7 +72,7 @@ func NewState(header externalapi.MutableBlockHeader) *State {
 			Timestamp:    timestamp,
 			Nonce:        nonce,
 			BlockVersion: header.Version(),
-			useCLibrary:  UseHoohashCLibrary,
+			useCLibrary:  UseHoohashCLibrary(),
 		}
 
 		// ALWAYS let Go generate the matrix. There's no divergence in this.
@@ -179,29 +184,30 @@ func (state *State) CalculateProofOfWorkValuePyrinhash() (*big.Int, *externalapi
 
 func (state *State) IncrementNonce() { state.Nonce++ }
 
-func (state *State) CheckProofOfWork(block *externalapi.DomainBlock, powSkip bool) bool {
+func (state *State) CheckProofOfWork(block *externalapi.DomainBlock, powSkip bool) (bool, *big.Int) {
 	powNum, _ := state.CalculateProofOfWorkValue()
 	if state.BlockVersion < constants.PoWIntegrityMinVersion {
-		return powNum.Cmp(&state.Target) <= 0
+		return powNum.Cmp(&state.Target) <= 0, powNum
 	} else if powSkip && state.BlockVersion >= constants.PoWIntegrityMinVersion {
-		return powNum.Cmp(&state.Target) <= 0
+		return powNum.Cmp(&state.Target) <= 0, powNum
 	} else if state.BlockVersion >= constants.PoWIntegrityMinVersion {
 		powHash, err := externalapi.NewDomainHashFromString(block.PoWHash)
 		if err != nil {
-			return false
+			return false, powNum
 		}
 		if !powHash.Equal(new(externalapi.DomainHash)) {
 			submittedPowNum := toBig(powHash)
 			if submittedPowNum.Cmp(powNum) == 0 {
-				return powNum.Cmp(&state.Target) <= 0
+				return powNum.Cmp(&state.Target) <= 0, powNum
 			}
 		}
 	}
-	return false
+	return false, powNum
 }
 
 func CheckProofOfWorkByBits(header externalapi.MutableBlockHeader, block *externalapi.DomainBlock, powSkip bool) bool {
-	return NewState(header).CheckProofOfWork(block, powSkip)
+	valid, _ := NewState(header).CheckProofOfWork(block, powSkip)
+	return valid
 }
 
 func toBig(hash *externalapi.DomainHash) *big.Int {
@@ -277,4 +283,11 @@ func BlockLevel(header externalapi.BlockHeader, maxBlockLevel int) int {
 	proofOfWorkValue, _ := state.CalculateProofOfWorkValue()
 	level := max(maxBlockLevel-proofOfWorkValue.BitLen(), 0)
 	return level
+}
+
+func BlockLevelFromValue(powNum *big.Int, maxBlockLevel int) int {
+	if powNum == nil {
+		return maxBlockLevel
+	}
+	return max(maxBlockLevel-powNum.BitLen(), 0)
 }

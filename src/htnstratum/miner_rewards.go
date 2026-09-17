@@ -1,7 +1,7 @@
 // src/htnstratum/miner_rewards.go
 // Foztor 1st October 25.
 // Exposes an http API endpoint
-//  curl "http://127.0.0.1:5556/miner/rewards?limit=450&address=hoosat:qrm2jaklpf95t4a3kxm04zr27sayq9avvdwqcapm5c696qa3vj3lj3ye3nr9s&worker=Volta" 
+//  curl "http://127.0.0.1:5556/miner/rewards?limit=450&address=hoosat:qrm2jaklpf95t4a3kxm04zr27sayq9avvdwqcapm5c696qa3vj3lj3ye3nr9s&worker=Volta"
 //  Returns JSON like this in an array
 //   {
 //      "minedBlueHash": "f2fc18865187ef63d912d066aade9d1f2d86be466b1ba843ae4c9b9fea279cf7",
@@ -12,23 +12,22 @@
 //      "paidAt": 1759322062398
 //   }
 //  Idea is that miners can call it so that they can work out how many blocks actually got a reward
-//  
+//
 //  Requires health_check_port: :5556 in config.yaml
 //  Also requires  the handler to be registered in  stratum_handler.go
 //  See Snippet below
 
 /*
-   if cfg.HealthCheckPort != "" {
-                logger.Info("enabling health check on port " + cfg.HealthCheckPort)
-                http.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
-                        w.WriteHeader(http.StatusOK)
-                })
+	if cfg.HealthCheckPort != "" {
+	             logger.Info("enabling health check on port " + cfg.HealthCheckPort)
+	             http.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+	                     w.WriteHeader(http.StatusOK)
+	             })
 
-                registerMinerRewardsHandlers(htnApi) // <- New Rewards handler
+	             registerMinerRewardsHandlers(htnApi) // <- New Rewards handler
 
-                go http.ListenAndServe(cfg.HealthCheckPort, nil)
-        }
-
+	             go http.ListenAndServe(cfg.HealthCheckPort, nil)
+	     }
 */
 package htnstratum
 
@@ -42,10 +41,11 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+
 	// "time"
 	"unicode"
 
-	"github.com/Hoosat-Oy/HTND/app/appmessage"
+	"github.com/HoosatNetwork/HTND/app/appmessage"
 )
 
 // RewardsRow is a single "we mined this blue and got paid" record.
@@ -130,7 +130,7 @@ func registerMinerRewardsHandlers(api *HtnApi) {
 		}
 
 		// logInfo(api, fmt.Sprintf("miner/rewards served addr=%s worker=%s limit=%d rows=%d latency=%s",
-			// addr, workerFilter, limit, len(out), time.Since(start)))
+		// addr, workerFilter, limit, len(out), time.Since(start)))
 	})
 }
 
