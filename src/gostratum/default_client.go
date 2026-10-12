@@ -129,12 +129,13 @@ func CleanWallet(in string) (string, error) {
 		return CleanWallet("hoosat:" + in)
 	}
 
-	// Validate and extract correct address format
-	if walletRegex.MatchString(in) {
-		if len(in) >= 61 {
-			return in[0:61], nil
-		} else {
-			return "", errors.New("unable to coerce wallet to valid hoosat or hoosattest address")
+	// Validate and extract correct address format. Only accept the truncated
+	// form when it is itself a valid address: cutting at byte 61 can split a
+	// multi-byte rune, and the result reaches a prometheus label value, which
+	// panics on invalid UTF-8.
+	if walletRegex.MatchString(in) && len(in) >= 61 {
+		if _, err := util.DecodeAddress(in[:61], util.Bech32PrefixHoosat); err == nil {
+			return in[:61], nil
 		}
 	}
 	return "", errors.New("unable to coerce wallet to valid hoosat or hoosattest address")
