@@ -27,6 +27,8 @@ type StratumContext struct {
 	State         any // gross, but go generics aren't mature enough this can be typed 😭
 	writeLock     int32
 	Extranonce    string
+
+	authorizeCount int // mining.authorize requests seen on this connection
 }
 
 type ContextSummary struct {

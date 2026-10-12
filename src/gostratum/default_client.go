@@ -47,7 +47,20 @@ func DefaultHandlers() StratumHandlerMap {
 	}
 }
 
+// Bounds on what one miner connection can make the bridge retain: every
+// authorize with a new worker name creates per-worker stats and prometheus
+// series that are kept after the connection closes. maxAuthorizePerConn is a
+// guess at how many rigs a proxy multiplexes on one connection; adjust to taste.
+const (
+	maxAuthorizePerConn = 4
+	maxWorkerNameLen    = 64
+)
+
 func HandleAuthorize(ctx *StratumContext, event JsonRpcEvent) error {
+	ctx.authorizeCount++
+	if ctx.authorizeCount > maxAuthorizePerConn {
+		return fmt.Errorf("too many authorize requests on one connection")
+	}
 	if len(event.Params) < 1 {
 		return fmt.Errorf("malformed event from miner, expected param[1] to be address")
 	}
@@ -60,6 +73,9 @@ func HandleAuthorize(ctx *StratumContext, event JsonRpcEvent) error {
 	if len(parts) >= 2 {
 		address = parts[0]
 		workerName = parts[1]
+	}
+	if len(workerName) > maxWorkerNameLen {
+		workerName = strings.ToValidUTF8(workerName[:maxWorkerNameLen], "")
 	}
 	var err error
 	address, err = CleanWallet(address)
