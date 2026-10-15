@@ -69,4 +69,3 @@ func readFromConnection(connection net.Conn, cb LineCallback) error {
 	}
 	return nil
 }
-
