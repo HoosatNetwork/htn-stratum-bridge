@@ -1,11 +1,9 @@
 package gostratum
 
 import (
-	"bufio"
 	"bytes"
 	"net"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -15,8 +13,9 @@ import (
 func spawnClientListener(ctx *StratumContext, connection net.Conn, s *StratumListener) error {
 	defer ctx.Disconnect()
 
+	var pending []byte // start of a line whose newline has not arrived yet
 	for {
-		err := readFromConnection(connection, func(line string) error {
+		err := readFromConnection(connection, &pending, func(line string) error {
 			event, err := UnmarshalEvent(line)
 			if err != nil {
 				ctx.Logger.Error("error unmarshalling event", zap.String("raw", line))
@@ -42,24 +41,44 @@ func spawnClientListener(ctx *StratumContext, connection net.Conn, s *StratumLis
 
 type LineCallback func(line string) error
 
-func readFromConnection(connection net.Conn, cb LineCallback) error {
+// maxLineLength is the longest accepted stratum line in bytes, counting its "\r\n" or "\n"
+// terminator (after NUL bytes are stripped). It equals the read buffer size, which was the
+// longest line that could be parsed before lines could span reads.
+const maxLineLength = 8096 * 2
+
+var errLineTooLong = errors.New("stratum line exceeds maximum length")
+
+func readFromConnection(connection net.Conn, pending *[]byte, cb LineCallback) error {
 	deadline := time.Now().Add(5 * time.Second).UTC()
 	if err := connection.SetReadDeadline(deadline); err != nil {
 		return err
 	}
 
-	buffer := make([]byte, 8096*2)
-	_, err := connection.Read(buffer)
+	buffer := make([]byte, maxLineLength)
+	n, err := connection.Read(buffer)
 	if err != nil {
 		return errors.Wrapf(err, "error reading from connection")
 	}
-	buffer = bytes.ReplaceAll(buffer, []byte("\x00"), nil)
-	scanner := bufio.NewScanner(strings.NewReader(string(buffer)))
-	for scanner.Scan() {
-		if err := cb(scanner.Text()); err != nil {
+	// a line can arrive in several reads: data starts with the unterminated part of the previous reads
+	data := append(*pending, bytes.ReplaceAll(buffer[:n], []byte("\x00"), nil)...)
+	for {
+		end := bytes.IndexByte(data, '\n')
+		if end < 0 {
+			break
+		}
+		if end+1 > maxLineLength {
+			return errLineTooLong
+		}
+		line := bytes.TrimSuffix(data[:end], []byte("\r"))
+		data = data[end+1:]
+		if err := cb(string(line)); err != nil {
 			return err
 		}
 	}
+	if len(data) >= maxLineLength { // cannot become a line of at most maxLineLength bytes
+		return errLineTooLong
+	}
+	*pending = append([]byte(nil), data...)
 	return nil
 }
 
