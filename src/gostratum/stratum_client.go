@@ -14,6 +14,13 @@ import (
 
 func spawnClientListener(ctx *StratumContext, connection net.Conn, s *StratumListener) error {
 	defer ctx.Disconnect()
+	// A panic in a handler must cost this miner its connection, not take down
+	// the whole bridge and every other miner with it.
+	defer func() {
+		if r := recover(); r != nil {
+			ctx.Logger.Error("panic in stratum client handler", zap.Any("panic", r), zap.Stack("stack"))
+		}
+	}()
 
 	for {
 		err := readFromConnection(connection, func(line string) error {
@@ -62,4 +69,3 @@ func readFromConnection(connection net.Conn, cb LineCallback) error {
 	}
 	return nil
 }
-

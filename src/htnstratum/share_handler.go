@@ -112,6 +112,7 @@ func newShareHandler(hoosat *rpcclient.RPCClient, rollingStats bool, invalidateG
 
 func (sh *shareHandler) getCreateStats(ctx *gostratum.StratumContext) *WorkStats {
 	sh.statsLock.Lock()
+	defer sh.statsLock.Unlock() // InitWorkerCounters below can panic
 	var stats *WorkStats
 	found := false
 	if ctx.WorkerName != "" {
@@ -145,7 +146,6 @@ func (sh *shareHandler) getCreateStats(ctx *gostratum.StratumContext) *WorkStats
 		InitWorkerCounters(ctx)
 	}
 
-	sh.statsLock.Unlock()
 	return stats
 }
 
