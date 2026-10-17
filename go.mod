@@ -1,9 +1,9 @@
 module github.com/HoosatNetwork/htn-stratum-bridge
 
-go 1.27.1
+go 1.27.2
 
 require (
-	github.com/HoosatNetwork/HTND/v2 v2.18.1
+	github.com/HoosatNetwork/HTND/v2 v2.18.2
 	github.com/chewxy/math32 v1.11.2
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
@@ -17,7 +17,6 @@ require (
 )
 
 require (
-	github.com/HoosatNetwork/HTND v1.8.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
