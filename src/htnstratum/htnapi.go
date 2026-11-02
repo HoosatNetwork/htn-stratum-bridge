@@ -29,6 +29,17 @@ type HtnApi struct {
 	hoosat        *rpcclient.RPCClient
 	connected     bool
 
+	// templateNode, when set, stands in for hoosat in the block template
+	// listener's sync checks and registrations (tests).
+	templateNode templateNode
+
+	// lastNotify is when the node last announced a new block template and
+	// lastRegister when the listener last registered for the announcements
+	// (unix ns). renotifyWait is the listener's wait before registering again.
+	lastNotify   atomic.Int64
+	lastRegister atomic.Int64
+	renotifyWait time.Duration
+
 	// synced tracks the latest observed node sync status from GetInfo().
 	// It is updated periodically by the block template listener.
 	synced atomic.Bool
@@ -79,8 +90,21 @@ func (htnApi *HtnApi) IsSynced() bool {
 	return htnApi.synced.Load()
 }
 
+// templateNode is the part of the RPC client the block template listener uses.
+type templateNode interface {
+	GetInfo() (*appmessage.GetInfoResponseMessage, error)
+	RegisterForNewBlockTemplateNotifications(func(*appmessage.NewBlockTemplateNotificationMessage)) error
+}
+
+func (htnApi *HtnApi) node() templateNode {
+	if htnApi.templateNode != nil {
+		return htnApi.templateNode
+	}
+	return htnApi.hoosat
+}
+
 func (htnApi *HtnApi) checkSyncState() (bool, error) {
-	clientInfo, err := htnApi.hoosat.GetInfo()
+	clientInfo, err := htnApi.node().GetInfo()
 	if err != nil {
 		return false, err
 	}
@@ -198,19 +222,24 @@ func (htnApi *HtnApi) startBlockTemplateListener(ctx context.Context, mineWhenNo
 	// Buffer + non-blocking send so notification callbacks never deadlock
 	// when the listener is temporarily paused.
 	blockReadyChan := make(chan struct{}, 1)
-	err := htnApi.hoosat.RegisterForNewBlockTemplateNotifications(func(_ *appmessage.NewBlockTemplateNotificationMessage) {
-		select {
-		case blockReadyChan <- struct{}{}:
-		default:
-		}
-	})
+	register := func() error {
+		htnApi.lastRegister.Store(time.Now().UnixNano())
+		return htnApi.node().RegisterForNewBlockTemplateNotifications(func(_ *appmessage.NewBlockTemplateNotificationMessage) {
+			htnApi.lastNotify.Store(time.Now().UnixNano())
+			select {
+			case blockReadyChan <- struct{}{}:
+			default:
+			}
+		})
+	}
+	err := register()
 	if err != nil {
 		htnApi.logger.Error("fatal: failed to register for block notifications from hoosat")
 	}
 
 	blockTicker := time.NewTicker(htnApi.blockWaitTime)
 	defer blockTicker.Stop()
-	syncTicker := time.NewTicker(5 * time.Second)
+	syncTicker := time.NewTicker(syncCheckInterval)
 	defer syncTicker.Stop()
 
 	// Prime sync state.
@@ -237,6 +266,7 @@ func (htnApi *HtnApi) startBlockTemplateListener(ctx context.Context, mineWhenNo
 				}
 				continue
 			}
+			htnApi.renotifyIfStale(synced, register)
 			if synced && !prevSynced && !mineWhenNotSynced {
 				// Node just became synced; nudge a fresh job out immediately.
 				blockReadyCb()
@@ -266,6 +296,41 @@ func (htnApi *HtnApi) startBlockTemplateListener(ctx context.Context, mineWhenNo
 			}
 		}
 	}
+}
+
+// The listener checks the node's sync state every syncCheckInterval. A synced
+// node announces several templates a second, so notifyStale of silence likely
+// means the registration is gone: a reconnect, including the RPC client's own
+// after a node restart, builds a new router and ends the notification
+// goroutine, and the client does not register again. Variables so tests can
+// shorten them.
+var (
+	syncCheckInterval = 5 * time.Second
+	notifyStale       = 15 * time.Second
+	maxRenotifyWait   = 5 * time.Minute
+)
+
+// renotifyIfStale registers for template announcements again when a synced
+// node has been silent for notifyStale. Without them the listener only polls
+// every block_wait_time and miners work on older templates. While the node
+// stays silent the wait between registrations doubles up to maxRenotifyWait;
+// an announcement after the last registration resets it. If the old
+// registration is in fact still alive, the RPC client keeps one more
+// notification goroutine per registration until the next reconnect: the wait
+// limits how often they are added, not how many there are.
+func (htnApi *HtnApi) renotifyIfStale(synced bool, register func() error) {
+	if htnApi.renotifyWait == 0 || htnApi.lastNotify.Load() > htnApi.lastRegister.Load() {
+		htnApi.renotifyWait = notifyStale
+	}
+	since := func(v *atomic.Int64) time.Duration { return time.Since(time.Unix(0, v.Load())) }
+	if !synced || since(&htnApi.lastNotify) <= notifyStale || since(&htnApi.lastRegister) <= htnApi.renotifyWait {
+		return
+	}
+	htnApi.logger.Warn("no block template announcement from hoosat for a while, registering again")
+	if err := register(); err != nil {
+		htnApi.logger.Warn("registering for block template announcements failed", zap.Error(err))
+	}
+	htnApi.renotifyWait = min(2*htnApi.renotifyWait, maxRenotifyWait)
 }
 
 func sanitizeWorkerID(s string) string {
