@@ -47,7 +47,20 @@ func DefaultHandlers() StratumHandlerMap {
 	}
 }
 
+// Bounds on what one miner connection can make the bridge retain: every
+// authorize with a new worker name creates per-worker stats and prometheus
+// series that are kept after the connection closes. maxAuthorizePerConn is a
+// guess at how many rigs a proxy multiplexes on one connection; adjust to taste.
+const (
+	maxAuthorizePerConn = 4
+	maxWorkerNameLen    = 64
+)
+
 func HandleAuthorize(ctx *StratumContext, event JsonRpcEvent) error {
+	ctx.authorizeCount++
+	if ctx.authorizeCount > maxAuthorizePerConn {
+		return fmt.Errorf("too many authorize requests on one connection")
+	}
 	if len(event.Params) < 1 {
 		return fmt.Errorf("malformed event from miner, expected param[1] to be address")
 	}
@@ -60,6 +73,9 @@ func HandleAuthorize(ctx *StratumContext, event JsonRpcEvent) error {
 	if len(parts) >= 2 {
 		address = parts[0]
 		workerName = parts[1]
+	}
+	if len(workerName) > maxWorkerNameLen {
+		workerName = strings.ToValidUTF8(workerName[:maxWorkerNameLen], "")
 	}
 	var err error
 	address, err = CleanWallet(address)
@@ -129,12 +145,13 @@ func CleanWallet(in string) (string, error) {
 		return CleanWallet("hoosat:" + in)
 	}
 
-	// Validate and extract correct address format
-	if walletRegex.MatchString(in) {
-		if len(in) >= 61 {
-			return in[0:61], nil
-		} else {
-			return "", errors.New("unable to coerce wallet to valid hoosat or hoosattest address")
+	// Validate and extract correct address format. Only accept the truncated
+	// form when it is itself a valid address: cutting at byte 61 can split a
+	// multi-byte rune, and the result reaches a prometheus label value, which
+	// panics on invalid UTF-8.
+	if walletRegex.MatchString(in) && len(in) >= 61 {
+		if _, err := util.DecodeAddress(in[:61], util.Bech32PrefixHoosat); err == nil {
+			return in[:61], nil
 		}
 	}
 	return "", errors.New("unable to coerce wallet to valid hoosat or hoosattest address")

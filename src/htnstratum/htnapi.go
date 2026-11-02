@@ -244,6 +244,8 @@ func (htnApi *HtnApi) startBlockTemplateListener(ctx context.Context, mineWhenNo
 			}
 			prevSynced = synced
 		case <-blockReadyChan:
+			// A new block template exists: a cached template would hand miners stale parents.
+			htnApi.invalidateGBTCache()
 			if mineWhenNotSynced || htnApi.IsSynced() {
 				blockReadyCb()
 				blockTicker.Reset(htnApi.blockWaitTime)

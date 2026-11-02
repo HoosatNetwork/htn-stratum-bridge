@@ -1,0 +1,59 @@
+name: Release packages
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            binary: htnbridge
+            archive-suffix: linux-amd64.tar.gz
+          - goos: windows
+            binary: htnbridge.exe
+            archive-suffix: windows.zip
+    env:
+      GOOS: ${{ matrix.goos }}
+      GOARCH: amd64
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+      GH_REPO: ${{ github.repository }}
+      BINARY: ${{ matrix.binary }}
+      ARCHIVE_SUFFIX: ${{ matrix.archive-suffix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v6.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: |
+          mkdir -p package
+          go build -o "package/$BINARY" ./cmd/htnbridge
+          cp cmd/htnbridge/config.yaml package/config.yaml
+
+      - name: Package
+        run: |
+          archive="HTN-Stratum-Bridge-${RELEASE_TAG}-${ARCHIVE_SUFFIX}"
+          if [ "$GOOS" = linux ]; then
+            tar -czf "$archive" -C package "$BINARY" config.yaml
+          else
+            (cd package && zip "../$archive" "$BINARY" config.yaml)
+          fi
+
+      - name: Upload release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$RELEASE_TAG" "HTN-Stratum-Bridge-${RELEASE_TAG}-${ARCHIVE_SUFFIX}"
