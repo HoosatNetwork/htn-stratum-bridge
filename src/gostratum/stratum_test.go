@@ -45,7 +45,7 @@ func TestNewClient(t *testing.T) {
 	event, _ := json.Marshal(NewEvent("1", "mining.authorize", []any{
 		"", "test",
 	}))
-	mc.AsyncWriteTestDataToReadBuffer(string(event))
+	mc.AsyncWriteTestDataToReadBuffer(string(event) + "\n")
 
 	responseReceived := false
 	mc.ReadTestDataFromBuffer(func(b []byte) {
