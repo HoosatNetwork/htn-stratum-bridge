@@ -2,6 +2,8 @@ github.com/HoosatNetwork/HTND/v2 v2.18.2 h1:uKjzfQrjPl0GiYyN+MkkCEgMfi+CA2KQ0j5j
 github.com/HoosatNetwork/HTND/v2 v2.18.2/go.mod h1:SWQjDM8vf77Zf4FTLs4e/qjpaAj/Z7sdQRb8uNwVXPg=
 github.com/HoosatNetwork/HTND/v2 v2.18.3 h1:kVyHUHO2T3QdIiWgFhqqULpSXbSrblnxsMHlt+K0uYs=
 github.com/HoosatNetwork/HTND/v2 v2.18.3/go.mod h1:en36wmfgfgJjL7jfxL1Zg7iM/NOlJvjA2h3c5ihE30I=
+github.com/HoosatNetwork/HTND/v2 v2.19.0 h1:jvmGVbV7bxG5HDki1s5C4PFn0mnmVE1KOs9c9RlWerw=
+github.com/HoosatNetwork/HTND/v2 v2.19.0/go.mod h1:yLhYtYvNSGq9SXGbHCkumDpOjfKfwVwfzeGWm+IG+dc=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
