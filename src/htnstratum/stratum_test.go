@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/HoosatNetwork/HTND/v2/app/appmessage"
+	"github.com/HoosatNetwork/HTND/v2/domain/consensus/model/externalapi"
+	"github.com/HoosatNetwork/HTND/v2/domain/consensus/utils/consensushashing"
 	"github.com/HoosatNetwork/HTND/v2/util/difficulty"
 	"github.com/google/go-cmp/cmp"
 )
@@ -29,14 +31,22 @@ func TestHeaderSerialization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	headerExpected := []byte{133, 58, 11, 178, 12, 232, 111, 38, 102, 218, 38, 0, 153, 227, 171, 36, 187, 77, 247, 200, 58, 150, 48, 227, 245, 25, 242, 154, 65, 20, 46, 210}
+	// expected: HTND's own header hash with timestamp and nonce zeroed (the pre-PoW hash)
+	domainBlock, err := appmessage.RPCBlockToDomainBlock(&block, new(externalapi.DomainHash).String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	prePow := domainBlock.Header.ToMutable()
+	prePow.SetTimeInMilliseconds(0)
+	prePow.SetNonce(0)
+	headerExpected := consensushashing.HeaderHash(prePow.ToImmutable()).ByteSlice()
 	if d := cmp.Diff(headerExpected, header); d != "" {
 		t.Fatalf("header generated incorrectly: %s", d)
 	}
 
 	{ // job separated to parts (lolminer/srbminer)
 		jobs := GenerateJobHeader(header)
-		expected := []uint64{2769687437080476293, 2642455852654975590, 16370749824715673019, 15145064868898544117}
+		expected := []uint64{13010215636699018172, 9778935575291462752, 8775572449963272124, 535084289290003726}
 		if d := cmp.Diff(expected, jobs); d != "" {
 			t.Fatalf("jobs generated incorrectly: %s", d)
 		}
@@ -45,7 +55,7 @@ func TestHeaderSerialization(t *testing.T) {
 
 	{ // job as single string (bzminer)
 		job := GenerateLargeJobParams(header, 1662696346)
-		expected := "853a0bb20ce86f2666da260099e3ab24bb4df7c83a9630e3f519f29a41142ed29abb1a6300000000"
+		expected := "bc73adc430928db46084ad3e18c2b587bce7c3f4a518c9790ee5057c53006d079abb1a6300000000"
 		if d := cmp.Diff(expected, job); d != "" {
 			t.Fatalf("jobs generated incorrectly: %s", d)
 		}
