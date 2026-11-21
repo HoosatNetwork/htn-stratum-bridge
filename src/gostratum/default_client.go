@@ -127,7 +127,8 @@ func SendExtranonce(ctx *StratumContext) {
 	}
 }
 
-var walletRegex = regexp.MustCompile("(hoosat|hoosattest):[a-z0-9]+")
+// walletRegex matches the address at the start of a login; CleanWallet discards what follows it.
+var walletRegex = regexp.MustCompile("^(hoosat|hoosattest):[a-z0-9]+")
 
 func CleanWallet(in string) (string, error) {
 	// Check if the input has a valid address for either prefix
@@ -145,13 +146,18 @@ func CleanWallet(in string) (string, error) {
 		return CleanWallet("hoosat:" + in)
 	}
 
-	// Validate and extract correct address format. Only accept the truncated
-	// form when it is itself a valid address: cutting at byte 61 can split a
-	// multi-byte rune, and the result reaches a prometheus label value, which
-	// panics on invalid UTF-8.
-	if walletRegex.MatchString(in) && len(in) >= 61 {
-		if _, err := util.DecodeAddress(in[:61], util.Bech32PrefixHoosat); err == nil {
-			return in[:61], nil
+	// Take the address at the start and discard everything after it: any byte outside [a-z0-9] ends the
+	// address, so "<addr>,rig1", "<addr> rig1" or "<addr>," all give <addr> (only "." sets a worker name, in
+	// HandleAuthorize). A longer lowercase run must decode in full. Only a valid address is returned: the
+	// result reaches a prometheus label value, which panics on invalid UTF-8. (This used to cut at byte 61,
+	// which cuts a mainnet Schnorr address short.) Clone so the kept wallet does not pin the whole login.
+	if m := walletRegex.FindString(in); m != "" && m != in {
+		prefix := util.Bech32PrefixHoosat
+		if strings.HasPrefix(m, "hoosattest:") {
+			prefix = util.Bech32PrefixHoosatTest
+		}
+		if _, err := util.DecodeAddress(m, prefix); err == nil {
+			return strings.Clone(m), nil
 		}
 	}
 	return "", errors.New("unable to coerce wallet to valid hoosat or hoosattest address")
