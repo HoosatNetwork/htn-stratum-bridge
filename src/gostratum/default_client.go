@@ -80,6 +80,12 @@ func HandleAuthorize(ctx *StratumContext, event JsonRpcEvent) error {
 	var err error
 	address, err = CleanWallet(address)
 	if err != nil {
+		// Attempt one reply so the miner learns why before the connection closes (it otherwise sees only EOF).
+		// The error text is fixed and never contains the login. The validation error is returned either way, so
+		// a failed or timed-out reply still ends the connection.
+		if replyErr := ctx.Reply(NewResponse(event, false, []any{24, "invalid wallet address", nil})); replyErr != nil {
+			ctx.Logger.Warn("failed to send invalid wallet response", zap.Error(replyErr))
+		}
 		return fmt.Errorf("invalid wallet format %s: %w", address, err)
 	}
 

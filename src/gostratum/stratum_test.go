@@ -34,39 +34,38 @@ func TestAcceptContextLifetime(t *testing.T) {
 }
 
 func TestNewClient(t *testing.T) {
-	logger := testLogger()
-	listener := NewListener(DefaultConfig(logger))
+	// A valid wallet is authorized; an invalid one gets one JSON-RPC error (which never echoes the login), then the
+	// connection closes. (The test used to expect true for the empty wallet, so it could not pass.)
+	refusal := `{"id":"1","result":false,"error":[24,"invalid wallet address",null]}`
+	for _, c := range []struct {
+		wallet string
+		want   string
+	}{
+		{"hoosat:qqqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqsz6kzgffrt", `{"id":"1","result":true,"error":null}`},
+		{"", refusal},
+		{"hoosat:notanaddress", refusal},
+	} {
+		client := newPipeClient(t)
+		event, _ := json.Marshal(NewEvent("1", "mining.authorize", []any{c.wallet, "test"}))
+		client.send(event)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-	mc := NewMockConnection()
-	listener.newClient(ctx, mc)
-	// send in the authorize event
-	event, _ := json.Marshal(NewEvent("1", "mining.authorize", []any{
-		"", "test",
-	}))
-	mc.AsyncWriteTestDataToReadBuffer(string(event))
-
-	responseReceived := false
-	mc.ReadTestDataFromBuffer(func(b []byte) {
-		expected := JsonRpcResponse{
-			Id:     "1",
-			Error:  nil,
-			Result: true,
-		}
-		decoded := JsonRpcResponse{}
-		if err := json.Unmarshal(b, &decoded); err != nil {
+		line := client.readLine(t)
+		expected, decoded := JsonRpcResponse{}, JsonRpcResponse{}
+		if err := json.Unmarshal([]byte(c.want), &expected); err != nil {
 			t.Fatal(err)
 		}
-		if d := cmp.Diff(&expected, &decoded); d != "" {
-			t.Fatalf("response incorrect: %s", d)
+		if err := json.Unmarshal(line, &decoded); err != nil {
+			t.Fatalf("wallet %q: %v", c.wallet, err)
 		}
-		// done
-		responseReceived = true
-	})
-
-	if !responseReceived {
-		t.Fatalf("failed to properly respond to authorize")
+		if d := cmp.Diff(&expected, &decoded); d != "" {
+			t.Fatalf("wallet %q: response incorrect: %s", c.wallet, d)
+		}
+		if c.want == refusal {
+			client.requireClosed(t)
+		} else {
+			client.peer.Close()
+		}
+		client.requireDisconnect(t)
 	}
 }
 
