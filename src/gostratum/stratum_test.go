@@ -1,12 +1,15 @@
 package gostratum
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/HoosatNetwork/HTND/v2/util"
 	"github.com/google/go-cmp/cmp"
 	"github.com/mattn/go-colorable"
 	"go.uber.org/zap"
@@ -71,29 +74,49 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestWalletValidation(t *testing.T) {
+	// Real addresses: the earlier literals were Kaspa addresses with the prefix swapped, so their checksums
+	// failed and the test could not pass.
+	addr := func(prefix util.Bech32Prefix, b byte) string {
+		a, err := util.NewAddressPublicKey(bytes.Repeat([]byte{b}, 32), prefix)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return a.String()
+	}
+	main, test := addr(util.Bech32PrefixHoosat, 1), addr(util.Bech32PrefixHoosatTest, 2)
+	broken := main[:len(main)-1] + "q" // change the last checksum character
+	if main[len(main)-1] == 'q' {
+		broken = main[:len(main)-1] + "p"
+	}
 	tests := []struct {
 		in        string
 		expected  string
 		shouldErr bool
 	}{
-		{
-			in:       "hoosat:qqayxgcjfh6d7uxpj4w3qzjvx73vdehfx22fl6cacmn44rpj5geg2rxyuhga4,Rig_3784816",
-			expected: "hoosat:qqayxgcjfh6d7uxpj4w3qzjvx73vdehfx22fl6cacmn44rpj5geg2rxyuhga4",
-		},
-		{
-			in:       "hoosat:qqkrl0er5ka5snd55gr9rcf6rlpx8nln8gf3jxf83w4dc0khfqmauy6qs83zm,Rig_3784816",
-			expected: "hoosat:qqkrl0er5ka5snd55gr9rcf6rlpx8nln8gf3jxf83w4dc0khfqmauy6qs83zm",
-		},
-		{
-			in:       "qqkrl0er5ka5snd55gr9rcf6rlpx8nln8gf3jxf83w4dc0khfqmauy6qs83zm,Rig_3784816",
-			expected: "hoosat:qqkrl0er5ka5snd55gr9rcf6rlpx8nln8gf3jxf83w4dc0khfqmauy6qs83zm",
-		},
+		{in: main, expected: main},
+		{in: test, expected: test},
+		{in: main + ",Rig_3784816", expected: main},
+		{in: test + ",Rig_3784816", expected: test},
+		{in: strings.TrimPrefix(main, "hoosat:") + ",Rig_3784816", expected: main},
+		{in: broken + ",Rig_3784816", shouldErr: true},     // checksum broken: no valid address to keep
+		{in: "x" + main + ",Rig_3784816", shouldErr: true}, // the address must start the login
+		{in: "", shouldErr: true},
+		// anything outside [a-z0-9] ends the address and is discarded
+		{in: main + ",", expected: main},
+		{in: main + " rig1", expected: main},
+		{in: main + "RIG1", expected: main},
+		// a lowercase extension is part of the candidate and must decode in full
+		{in: main + "x", shouldErr: true},
+		{in: main + "x,rig1", shouldErr: true},
 	}
 
 	for _, v := range tests {
 		cleaned, err := CleanWallet(v.in)
 		if err != nil && !v.shouldErr {
-			t.Fatalf("Unexpected error for wallet %+v", v)
+			t.Fatalf("Unexpected error for wallet %+v: %v", v, err)
+		}
+		if err == nil && v.shouldErr {
+			t.Fatalf("wallet %+v accepted as %s", v, cleaned)
 		}
 		if cleaned != v.expected {
 			t.Fatalf("expected %s, got %s", v.expected, cleaned)
